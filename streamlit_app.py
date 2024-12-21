@@ -161,13 +161,13 @@ def download_file(data, filename, filetype):
     
     # Eliminar la parte de guardar el archivo en el entorno
     if filetype == "Excel":
-        with pd.ExcelWriter(f"{filename}_{timestamp}.xlsx", engine="openpyxl") as writer:
+        with pd.ExcelWriter(f"{filename}.xlsx", engine="openpyxl") as writer:
             data.to_excel(writer, index=False, sheet_name="Horario")
-        with open(f"{filename}_{timestamp}.xlsx", "rb") as f:
+        with open(f"{filename}.xlsx", "rb") as f:
             st.download_button(
                 label="Descargar horario en Excel",
                 data=f,
-                file_name=f"horario_generado_{timestamp}.xlsx",
+                file_name=f"horario_generado.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     elif filetype == "CSV":
@@ -175,7 +175,7 @@ def download_file(data, filename, filetype):
         st.download_button(
             label="Descargar horario en CSV",
             data=csv_data,
-            file_name=f"horario_generado_{timestamp}.csv",
+            file_name=f"horario_generado.csv",
             mime="text/csv"
         )
     elif filetype == "PDF":
@@ -185,13 +185,13 @@ def download_file(data, filename, filetype):
         pdf.set_font("Arial", size=12)
         for row in data.itertuples(index=False):
             pdf.cell(0, 10, txt=str(row), ln=True)
-        pdf_output = f"{filename}_{timestamp}.pdf"
+        pdf_output = f"{filename}.pdf"
         pdf.output(pdf_output)
         with open(pdf_output, "rb") as f:
             st.download_button(
                 label="Descargar horario en PDF",
                 data=f,
-                file_name=f"horario_generado_{timestamp}.pdf",
+                file_name=f"horario_generado.pdf",
                 mime="application/pdf"
             )
 
