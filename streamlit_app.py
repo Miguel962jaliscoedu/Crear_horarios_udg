@@ -42,8 +42,7 @@ days_mapping = {
 # Nueva función para limpiar los días
 def clean_days(value):
     if isinstance(value, str):
-        # Descomponer en caracteres si es necesario
-        possible_days = value.strip().split()  # Separar por espacios si es necesario
+        possible_days = value.strip().split()
         cleaned_days = [days_mapping.get(day, None) for day in possible_days]
         return [day for day in cleaned_days if day is not None]
     return []
@@ -54,18 +53,13 @@ def process_data(first_sheet):
     columns_to_extract = ["NRC", "Materia", "Sec", "Ses", "Hora", "Días", "Edif", "Aula", "Profesor"]
     first_sheet = first_sheet[columns_to_extract]
     first_sheet.columns = ["NRC", "Materia", "Sección", "Sesión", "Hora", "Días", "Edificio", "Aula", "Profesor"]
-    first_sheet.loc[:, "Materia"] = first_sheet["Materia"].ffill()
-    first_sheet.loc[:, "NRC"] = first_sheet["NRC"].ffill()
-    first_sheet.loc[:, "Sección"] = first_sheet["Sección"].ffill()
-    first_sheet.loc[:, "Profesor"] = first_sheet["Profesor"].ffill()
+    first_sheet.loc[:, "Materia"] = first_sheet["Materia"].ffill().infer_objects()
+    first_sheet.loc[:, "NRC"] = first_sheet["NRC"].ffill().infer_objects()
+    first_sheet.loc[:, "Sección"] = first_sheet["Sección"].ffill().infer_objects()
+    first_sheet.loc[:, "Profesor"] = first_sheet["Profesor"].ffill().infer_objects()
     first_sheet = first_sheet.dropna(subset=["Sesión", "Hora", "Días"])
 
-    # Aplicar limpieza en los días
     first_sheet["Días"] = first_sheet["Días"].apply(clean_days)
-
-    # Depuración: Verificar días únicos después de limpiar
-    unique_days = first_sheet["Días"].explode().unique()
-    st.write("Días únicos después de limpiar:", unique_days)
 
     def parse_time_range(time_string):
         try:
@@ -84,33 +78,21 @@ def process_data(first_sheet):
 
 # Función para filtrar los datos según el NRC
 def filter_by_nrc(data):
-    st.write("Datos originales:")
-    st.dataframe(data)
-
     unique_nrcs = data[["NRC", "Materia", "Profesor"]].drop_duplicates()
-    st.write("Lista única de NRC disponibles:")
-    st.dataframe(unique_nrcs)
 
     selected_nrcs = st.multiselect("Selecciona los NRC de las materias que deseas incluir:", options=unique_nrcs["NRC"].astype(str).tolist())
 
-    # Mostrar selección del usuario
-    st.write("NRC seleccionados por el usuario:", selected_nrcs)
-
-    # Filtrar los datos por NRC
-    data["NRC"] = data["NRC"].astype(str)  # Asegurarse de que sean cadenas
+    data["NRC"] = data["NRC"].astype(str)
     filtered_data = data[data["NRC"].isin(selected_nrcs)]
 
     if not filtered_data.empty:
         st.success(f"Se encontraron {len(filtered_data)} registros para los NRC seleccionados.")
+        st.write("Registros encontrados para los NRC seleccionados:")
+        st.dataframe(filtered_data)
     else:
         st.warning("No hay datos disponibles para los NRC seleccionados. Revisa los valores seleccionados.")
 
-    # Mostrar datos filtrados para depuración
-    st.write("Datos filtrados:")
-    st.dataframe(filtered_data)
-
     return filtered_data
-
 
 # Función para crear una hoja de horario
 def create_schedule_sheet(expanded_data):
@@ -118,7 +100,7 @@ def create_schedule_sheet(expanded_data):
         "07:00 AM - 07:59 AM", "08:00 AM - 08:59 AM", "09:00 AM - 09:59 AM", "10:00 AM - 10:59 AM",
         "11:00 AM - 11:59 AM", "12:00 PM - 12:59 PM", "01:00 PM - 01:59 PM", "02:00 PM - 02:59 PM",
         "03:00 PM - 03:59 PM", "04:00 PM - 04:59 PM", "05:00 PM - 05:59 PM", "06:00 PM - 06:59 PM",
-        "07:00 PM - 07:59 PM"
+        "07:00 PM - 07:59 PM", "08:00 PM - 08:59 PM"
     ]
     days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
     schedule = pd.DataFrame(columns=["Hora"] + days)
@@ -130,12 +112,38 @@ def create_schedule_sheet(expanded_data):
             class_start, class_end = [pd.to_datetime(hr, format="%I:%M %p") for hr in row["Hora"].split(" - ")]
             if start_hour < class_end and class_start < end_hour:
                 day_col = row["Días"]
-                content = f"{row['Materia']} ({row['Aula']})\n{row['Profesor']}"
+                edificio_letra = row["Edificio"][-1] if pd.notna(row["Edificio"]) else ""
+                content = f"{row['Materia']}\n{edificio_letra} {row['Aula']}\n{row['Profesor']}"
                 if pd.notna(schedule.loc[schedule["Hora"] == hour_range, day_col].values[0]):
                     schedule.loc[schedule["Hora"] == hour_range, day_col] += "\n" + content
                 else:
                     schedule.loc[schedule["Hora"] == hour_range, day_col] = content
-    return schedule
+
+    # Ajustar estilo de tabla
+    styled_schedule = schedule.style.set_properties(
+        subset=["Hora"], 
+        **{"width": "100px", "text-align": "center"}
+    ).set_table_styles([
+        {
+            "selector": "th",
+            "props": [
+                ("background-color", "#f2f2f2"),
+                ("color", "#333"),
+                ("font-weight", "bold"),
+                ("text-align", "center")
+            ]
+        },
+        {
+            "selector": "td",
+            "props": [
+                ("text-align", "center"),
+                ("word-wrap", "break-word"),
+                ("white-space", "pre-wrap")
+            ]
+        }
+    ])
+
+    return styled_schedule
 
 # Función principal
 def main():
@@ -148,8 +156,6 @@ def main():
         st.dataframe(input_df.head())
 
         output_df = transform_excel(input_df)
-        st.write("Archivo transformado:")
-        st.dataframe(output_df)
 
         expanded_data = process_data(output_df)
         st.write("Datos procesados:")
@@ -157,22 +163,104 @@ def main():
 
         filtered_data = filter_by_nrc(expanded_data)
         if not filtered_data.empty:
-            if st.button("Generar horario"):
-                schedule_df = create_schedule_sheet(filtered_data)
-                st.write("Horario generado:")
-                st.dataframe(schedule_df)
+            # Generar el horario
+            if st.button("Generar horario", key="generar_horario"):
+                # Crear la hoja de horario (sin aplicar estilos por ahora)
+                schedule = create_schedule_sheet(filtered_data)
 
-                # Descargar el horario como archivo Excel
-                output_path = "horario_generado.xlsx"
-                with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-                    schedule_df.to_excel(writer, index=False, sheet_name="Horario")
-                with open(output_path, "rb") as f:
+                # Mostrar el horario generado
+                st.write("Horario generado:")
+                st.dataframe(schedule)
+
+                # Obtener el DataFrame de datos (sin el Styler)
+                schedule_data = schedule.data  # Esto es el DataFrame original sin el estilo
+
+                # Definir la lista de horas
+                hours_list = [
+                    "07:00 AM - 07:59 AM", "08:00 AM - 08:59 AM", "09:00 AM - 09:59 AM", "10:00 AM - 10:59 AM",
+                    "11:00 AM - 11:59 AM", "12:00 PM - 12:59 PM", "01:00 PM - 01:59 PM", "02:00 PM - 02:59 PM",
+                    "03:00 PM - 03:59 PM", "04:00 PM - 04:59 PM", "05:00 PM - 05:59 PM", "06:00 PM - 06:59 PM",
+                    "07:00 PM - 07:59 PM", "08:00 PM - 08:59 PM"
+                ]
+
+                # Crear un archivo Excel con el horario
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Horario"
+
+                # Agregar los encabezados al archivo Excel
+                for c_idx, column_title in enumerate(schedule_data.columns, 1):
+                    cell = ws.cell(row=1, column=c_idx, value=column_title)
+                    # Aplicar estilos a los encabezados
+                    cell.font = Font(bold=True)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.fill = PatternFill(start_color="FFDDC1", end_color="FFDDC1", fill_type="solid")
+
+                # Agregar los datos al archivo Excel (empezando en la fila 2)
+                for r_idx, row in enumerate(schedule_data.values, 2):  # Comenzar en la fila 2
+                    for c_idx, value in enumerate(row, 1):
+                        cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                        # Estilos para las celdas de datos
+                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+
+                # Combinar celdas para clases que ocupan múltiples horas consecutivas
+                for idx, row in schedule_data.iterrows():
+                    # Parseamos el rango de horas para ver si abarcan más de una celda
+                    start_hour, end_hour = [pd.to_datetime(hr, format="%I:%M %p") for hr in row["Hora"].split(" - ")]
+    
+                    # Convertimos las horas al formato adecuado para la comparación con hours_list
+                    start_hour_str = start_hour.strftime("%I:%M %p").replace(" 0", " ")  # Quitar el cero inicial en formato de 12 horas
+                    end_hour_str = end_hour.strftime("%I:%M %p").replace(" 0", " ")  # Quitar el cero inicial en formato de 12 horas
+
+                    # Asegurarnos de que las horas en hours_list coincidan con el formato utilizado
+                    start_idx = next((i for i, hour in enumerate(hours_list) if start_hour_str in hour), None)
+                    end_idx = next((i for i, hour in enumerate(hours_list) if end_hour_str in hour), None)
+
+                    # Si las horas no se encuentran en la lista hours_list, mostramos un mensaje de error
+                    if start_idx is None or end_idx is None:
+                        raise ValueError(f"Las horas {start_hour_str} y/o {end_hour_str} no se encuentran en la lista de horas disponibles.")
+
+                    # Si la clase abarca varias horas, combinamos las celdas
+                    if end_idx > start_idx:
+                        day_col = row["Días"]
+                        col_idx = schedule_data.columns.get_loc(day_col) + 1  # Obtener la columna correspondiente a los días
+                        # Combinar las celdas correspondientes a las horas
+                        ws.merge_cells(start_row=start_idx + 2, start_column=col_idx, end_row=end_idx + 2, end_column=col_idx)
+                        merged_cell = ws.cell(row=start_idx + 2, column=col_idx)
+                        merged_cell.value = f"{row['Materia']}\n{row['Edificio'][-1]} {row['Aula']}\n{row['Profesor']}"
+                        merged_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+                # Ajustar el tamaño de las columnas
+                for col in range(1, len(schedule_data.columns) + 1):
+                    col_letter = get_column_letter(col)
+                    max_length = 0
+                    for row in schedule_data.iloc[:, col - 1]:
+                        if isinstance(row, str):
+                            max_length = max(max_length, len(row))
+                    adjusted_width = min(max_length + 2, 40)  # Limitar el ancho máximo a 40
+                    ws.column_dimensions[col_letter].width = adjusted_width
+
+
+                # Guardar el archivo y permitir la descarga
+                file_path = "horario_generado.xlsx"
+                wb.save(file_path)
+
+                # Descargar el archivo generado
+                with open(file_path, "rb") as f:
                     st.download_button(
-                        label="Descargar horario generado",
+                        label="Descargar horario",
                         data=f,
-                        file_name="horario_generado.xlsx",
+                        file_name=file_path,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
+                # Eliminar el archivo temporal después de la descarga
+                os.remove(file_path)
+
+
+# Ejecutar la función principal
 if __name__ == "__main__":
     main()
+
+
