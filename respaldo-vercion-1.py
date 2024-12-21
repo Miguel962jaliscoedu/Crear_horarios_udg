@@ -6,8 +6,8 @@ from openpyxl.utils import get_column_letter
 from datetime import timedelta
 import os
 
+# Función para transformar el archivo Excel subido
 def transform_excel(input_df):
-    """Transforma el archivo Excel subido."""
     columns_mapping = {
         "Unnamed: 1": "NRC",
         "Unnamed: 2": "Clave",
@@ -32,8 +32,24 @@ def transform_excel(input_df):
     output_df = output_df.dropna(how='all').reset_index(drop=True)
     return output_df
 
+# Modificar días a nombres válidos
+days_mapping = {
+    "L": "Lunes", "M": "Martes", "I": "Miércoles", "J": "Jueves", "V": "Viernes",
+    "lunes": "Lunes", "martes": "Martes", "miércoles": "Miércoles", "jueves": "Jueves", "viernes": "Viernes",
+    "LUNES": "Lunes", "MARTES": "Martes", "MIÉRCOLES": "Miércoles", "JUEVES": "Jueves", "VIERNES": "Viernes",
+}
+
+# Nueva función para limpiar los días
+def clean_days(value):
+    if isinstance(value, str):
+        # Descomponer en caracteres si es necesario
+        possible_days = value.strip().split()  # Separar por espacios si es necesario
+        cleaned_days = [days_mapping.get(day, None) for day in possible_days]
+        return [day for day in cleaned_days if day is not None]
+    return []
+
+# Función para procesar y transformar los datos
 def process_data(first_sheet):
-    """Procesar y transformar los datos de la hoja seleccionada."""
     first_sheet = first_sheet.iloc[1:]
     columns_to_extract = ["NRC", "Materia", "Sec", "Ses", "Hora", "Días", "Edif", "Aula", "Profesor"]
     first_sheet = first_sheet[columns_to_extract]
@@ -44,8 +60,12 @@ def process_data(first_sheet):
     first_sheet.loc[:, "Profesor"] = first_sheet["Profesor"].ffill()
     first_sheet = first_sheet.dropna(subset=["Sesión", "Hora", "Días"])
 
-    days_mapping = {"L": "Lunes", "M": "Martes", "I": "Miércoles", "J": "Jueves", "V": "Viernes"}
-    first_sheet["Días"] = first_sheet["Días"].apply(lambda x: [days_mapping[char] for char in x if char in days_mapping])
+    # Aplicar limpieza en los días
+    first_sheet["Días"] = first_sheet["Días"].apply(clean_days)
+
+    # Depuración: Verificar días únicos después de limpiar
+    unique_days = first_sheet["Días"].explode().unique()
+    st.write("Días únicos después de limpiar:", unique_days)
 
     def parse_time_range(time_string):
         try:
@@ -62,16 +82,38 @@ def process_data(first_sheet):
     expanded_data = first_sheet.explode("Días").reset_index(drop=True)
     return expanded_data
 
+# Función para filtrar los datos según el NRC
 def filter_by_nrc(data):
-    """Permitir al usuario seleccionar materias por NRC."""
+    st.write("Datos originales:")
+    st.dataframe(data)
+
     unique_nrcs = data[["NRC", "Materia", "Profesor"]].drop_duplicates()
-    selected_nrcs = st.multiselect("Selecciona los NRC de las materias que deseas incluir:", options=unique_nrcs["NRC"].tolist())
-    data["NRC"] = data["NRC"].astype(str)
+    st.write("Lista única de NRC disponibles:")
+    st.dataframe(unique_nrcs)
+
+    selected_nrcs = st.multiselect("Selecciona los NRC de las materias que deseas incluir:", options=unique_nrcs["NRC"].astype(str).tolist())
+
+    # Mostrar selección del usuario
+    st.write("NRC seleccionados por el usuario:", selected_nrcs)
+
+    # Filtrar los datos por NRC
+    data["NRC"] = data["NRC"].astype(str)  # Asegurarse de que sean cadenas
     filtered_data = data[data["NRC"].isin(selected_nrcs)]
+
+    if not filtered_data.empty:
+        st.success(f"Se encontraron {len(filtered_data)} registros para los NRC seleccionados.")
+    else:
+        st.warning("No hay datos disponibles para los NRC seleccionados. Revisa los valores seleccionados.")
+
+    # Mostrar datos filtrados para depuración
+    st.write("Datos filtrados:")
+    st.dataframe(filtered_data)
+
     return filtered_data
 
+
+# Función para crear una hoja de horario
 def create_schedule_sheet(expanded_data):
-    """Crear una hoja con el horario visual basado en las materias seleccionadas por NRC."""
     hours_list = [
         "07:00 AM - 07:59 AM", "08:00 AM - 08:59 AM", "09:00 AM - 09:59 AM", "10:00 AM - 10:59 AM",
         "11:00 AM - 11:59 AM", "12:00 PM - 12:59 PM", "01:00 PM - 01:59 PM", "02:00 PM - 02:59 PM",
@@ -95,6 +137,7 @@ def create_schedule_sheet(expanded_data):
                     schedule.loc[schedule["Hora"] == hour_range, day_col] = content
     return schedule
 
+# Función principal
 def main():
     st.title("Generador de Horarios a partir de Excel")
 
@@ -114,24 +157,22 @@ def main():
 
         filtered_data = filter_by_nrc(expanded_data)
         if not filtered_data.empty:
-            st.write("Datos filtrados:")
-            st.dataframe(filtered_data)
+            if st.button("Generar horario"):
+                schedule_df = create_schedule_sheet(filtered_data)
+                st.write("Horario generado:")
+                st.dataframe(schedule_df)
 
-            schedule_df = create_schedule_sheet(filtered_data)
-            st.write("Horario generado:")
-            st.dataframe(schedule_df)
-
-            # Descargar el horario como archivo Excel
-            output_path = "horario_generado.xlsx"
-            with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-                schedule_df.to_excel(writer, index=False, sheet_name="Horario")
-            with open(output_path, "rb") as f:
-                st.download_button(
-                    label="Descargar horario generado",
-                    data=f,
-                    file_name="horario_generado.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                # Descargar el horario como archivo Excel
+                output_path = "horario_generado.xlsx"
+                with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+                    schedule_df.to_excel(writer, index=False, sheet_name="Horario")
+                with open(output_path, "rb") as f:
+                    st.download_button(
+                        label="Descargar horario generado",
+                        data=f,
+                        file_name="horario_generado.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
 if __name__ == "__main__":
     main()
