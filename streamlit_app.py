@@ -158,6 +158,8 @@ def create_schedule_sheet(expanded_data):
 # Función para descargar archivos
 def download_file(data, filename, filetype):
     timestamp = pd.to_datetime('now').strftime('%Y%m%d_%H%M%S')
+    
+    # Eliminar la parte de guardar el archivo en el entorno
     if filetype == "Excel":
         with pd.ExcelWriter(f"{filename}_{timestamp}.xlsx", engine="openpyxl") as writer:
             data.to_excel(writer, index=False, sheet_name="Horario")
@@ -192,19 +194,6 @@ def download_file(data, filename, filetype):
                 file_name=f"horario_generado_{timestamp}.pdf",
                 mime="application/pdf"
             )
-
-# Función para personalizar estilos en Excel
-def style_excel(writer, sheet_name):
-    workbook = writer.book
-    worksheet = writer.sheets[sheet_name]
-    for col_idx, col in enumerate(worksheet.iter_cols(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column), 1):
-        column_letter = chr(64 + col_idx)
-        worksheet.column_dimensions[column_letter].width = 20
-        for cell in col:
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.font = Font(name="Calibri", size=11, bold=False)
-            if col_idx % 2 == 0:
-                cell.fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
 
 # Función principal
 def main():
