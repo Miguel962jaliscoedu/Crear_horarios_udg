@@ -4,3 +4,4 @@ openpyxl
 datetime
 fpdf
 requests
+beautifulsoup4

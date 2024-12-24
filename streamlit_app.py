@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from datetime import timedelta
 import os
+
 
 # Función para transformar el archivo Excel subido
 def transform_excel(input_df):
