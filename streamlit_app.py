@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
@@ -74,6 +76,15 @@ def process_data(first_sheet):
 
     first_sheet["Hora"] = first_sheet["Hora"].apply(parse_time_range)
     expanded_data = first_sheet.explode("Días").reset_index(drop=True)
+
+    # Formatear datos según lo solicitado
+    def format_cell(row):
+        materia = row['Materia']
+        edificio = row['Edificio'][-1] if isinstance(row['Edificio'], str) else ""
+        aula = int(row['Aula']) if pd.notna(row['Aula']) else ""
+        return f"{materia}\n{edificio} {aula}"
+
+    expanded_data["Contenido"] = expanded_data.apply(format_cell, axis=1)
     return expanded_data
 
 # Función para filtrar los datos según el NRC
@@ -114,7 +125,7 @@ def create_schedule_sheet(expanded_data):
             class_start, class_end = [pd.to_datetime(hr, format="%I:%M %p") for hr in row["Hora"].split(" - ")]
             if start_hour < class_end and class_start < end_hour:
                 day_col = row["Días"]
-                content = f"{row['Materia']}\n{row['Edificio']} {row['Aula']}\n{row['Profesor']}"
+                content = row['Contenido']
                 if pd.notna(schedule.loc[schedule["Hora"] == hour_range, day_col].values[0]):
                     schedule.loc[schedule["Hora"] == hour_range, day_col] += "\n" + content
                 else:
@@ -140,6 +151,7 @@ def create_schedule_sheet(expanded_data):
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.fill = header_fill
+        cell.border = thin_border
 
     # Agregar los datos al archivo Excel (empezando en la fila 2)
     for r_idx, row in enumerate(schedule.values, 2):
@@ -147,19 +159,37 @@ def create_schedule_sheet(expanded_data):
             cell = ws.cell(row=r_idx, column=c_idx, value=value)
             # Estilos para las celdas de datos
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = thin_border
 
     # Ajustar el tamaño de las columnas
     for col in ws.columns:
-        max_length = 0
         col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            try:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
-            except:
-                pass
-        adjusted_width = (max_length + 2) if max_length > 0 else 10
-        ws.column_dimensions[col_letter].width = adjusted_width
+        if col_letter == 'A':
+            ws.column_dimensions[col_letter].width = 10
+        else:
+            max_length = 0
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+            adjusted_width = min((max_length + 2), 25)
+            ws.column_dimensions[col_letter].width = adjusted_width
+
+    # Combinar celdas para clases que abarcan más de una hora
+    for col_idx, column_title in enumerate(schedule.columns[1:], 2):
+        for r_idx in range(2, len(hours_list) + 2):
+            cell_value = ws.cell(row=r_idx, column=col_idx).value
+            if cell_value:
+                merge_start = r_idx
+                while r_idx <= len(hours_list) + 1 and ws.cell(row=r_idx, column=col_idx).value == cell_value:
+                    r_idx += 1
+                merge_end = r_idx - 1
+                if merge_start < merge_end:
+                    ws.merge_cells(start_row=merge_start, start_column=col_idx, end_row=merge_end, end_column=col_idx)
+                    merged_cell = ws.cell(row=merge_start, column=col_idx)
+                    merged_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     return wb
 
@@ -199,5 +229,3 @@ def main():
 # Ejecutar la función principal
 if __name__ == "__main__":
     main()
-
-
