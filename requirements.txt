@@ -5,3 +5,4 @@ datetime
 fpdf
 requests
 beautifulsoup4
+lxml
