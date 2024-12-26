@@ -2,6 +2,8 @@
 
 from bs4 import BeautifulSoup
 import pandas as pd
+import requests
+from Funciones.utils import clean_days
 
 # Función para procesar subtablas
 def process_subtable(subtable, row_data, column_name):
@@ -72,3 +74,40 @@ def extract_table_data(soup):
             raise Exception(f"Error procesando una fila de la tabla: {e}")
 
     return rows
+
+def fetch_table_data(post_url, post_data):
+    try:
+        response = requests.post(post_url, data=post_data, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            rows = extract_table_data(soup)  # Asegúrate de que la función extract_table_data esté definida
+            return pd.DataFrame(rows)
+    except requests.exceptions.RequestException as e:
+        print(f"Error al obtener los datos: {e}")
+    return None
+
+def filter_relevant_columns(df):
+    # Lista de columnas que necesitamos
+    relevant_columns = ["NRC", "Materia", "Sec", "Sesión", "Hora", "Días", "Edificio", "Aula", "Profesor"]
+    return df[relevant_columns]
+
+# Función para procesar los datos obtenidos de la web
+def process_data_from_web(df):
+    df = filter_relevant_columns(df)
+    df.columns = ["NRC", "Materia", "Sección", "Sesión", "Hora", "Días", "Edificio", "Aula", "Profesor"]
+
+    def parse_time_range(time_string):
+        try:
+            start, end = time_string.split("-")
+            start_dt = pd.to_datetime(start.strip(), format="%H%M")
+            end_dt = pd.to_datetime(end.strip(), format="%H%M")
+            start_12h = start_dt.strftime("%I:%M %p")
+            end_12h = end_dt.strftime("%I:%M %p")
+            return f"{start_12h} - {end_12h}"
+        except Exception:
+            return time_string
+
+    df["Días"] = df["Días"].apply(clean_days)
+    df["Hora"] = df["Hora"].apply(parse_time_range)
+    expanded_data = df.explode("Días").reset_index(drop=True)
+    return expanded_data

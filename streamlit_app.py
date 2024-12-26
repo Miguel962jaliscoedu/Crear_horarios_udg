@@ -2,7 +2,7 @@
 
 import streamlit as st
 import pandas as pd
-from Funciones.form_handler import fetch_form_options_with_descriptions, build_post_data
+from Funciones.form_handler import fetch_form_options_with_descriptions, build_post_data,FORM_URL,POST_URL
 from Funciones.data_processing import fetch_table_data, process_data_from_web
 from Funciones.schedule import create_schedule_sheet, create_schedule_image
 from Funciones.utils import clean_days
@@ -12,21 +12,28 @@ def main():
     st.title("Generador de Horarios")
 
     form_options = fetch_form_options_with_descriptions(FORM_URL)
+
     if form_options:
         selected_options = {}
+
+        # Iterar sobre los campos (como ciclop, cup, etc.)
         for field, options in form_options.items():
-            descriptions = [opt['description'] for opt in options]
+            # Extraemos solo los valores para el selectbox
             values = [opt['value'] for opt in options]
-            selected_description = st.selectbox(f"Selecciona una opción para {field}:", descriptions)
-            if selected_description:
-                index = descriptions.index(selected_description)
-                selected_value = values[index]
+
+            # Mostrar el selectbox con los valores directamente
+            selected_value = st.selectbox(f"Selecciona una opción para {field}:", values)
+
+            if selected_value:
+                # Guardar el valor seleccionado en el diccionario de opciones
                 selected_options[field] = {"value": selected_value}
 
+        # Campo adicional para ingresar la carrera (majrp)
         carrera_input = st.text_input("Ingresa el valor de la carrera (majrp):")
         if carrera_input:
             selected_options["majrp"] = {"value": carrera_input}
-
+    
+        # Mostrar resultados seleccionados
         st.write("Opciones seleccionadas:")
         st.json({key: value["value"] for key, value in selected_options.items()})
 
