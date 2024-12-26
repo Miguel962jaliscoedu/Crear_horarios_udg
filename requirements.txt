@@ -2,6 +2,6 @@ streamlit
 pandas
 openpyxl
 datetime
-fpdf
+matplotlib
 requests
 beautifulsoup4
