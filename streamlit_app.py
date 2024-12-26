@@ -1,230 +1,233 @@
-import streamlit as st
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
-from openpyxl import Workbook, load_workbook
+import streamlit as st
+import io
+from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-from datetime import timedelta
-import os
 
+# URLs
+FORM_URL = "https://siiauescolar.siiau.udg.mx/wal/sspseca.forma_consulta"
+POST_URL = "https://siiauescolar.siiau.udg.mx/wal/sspseca.consulta_oferta"
 
-# Función para transformar el archivo Excel subido
-def transform_excel(input_df):
-    columns_mapping = {
-        "Unnamed: 1": "NRC",
-        "Unnamed: 2": "Clave",
-        "Unnamed: 3": "Materia",
-        "Unnamed: 4": "Sec",
-        "Unnamed: 5": "CR",
-        "Unnamed: 6": "CUP",
-        "Unnamed: 7": "DIS",
-        "Unnamed: 8": "Ses",
-        "Unnamed: 9": "Hora",
-        "Unnamed: 10": "Días",
-        "Unnamed: 11": "Edif",
-        "Unnamed: 12": "Aula",
-        "Unnamed: 15": "Profesor"
+# Función para construir el cuerpo de la solicitud POST
+def build_post_data(selected_options):
+    return {
+        "ciclop": selected_options.get("ciclop", {}).get("value", ""),
+        "cup": selected_options.get("cup", {}).get("value", ""),
+        "majrp": selected_options.get("majrp", {}).get("value", ""),
+        "mostrarp": "",
+        "crsep": "",
+        "materiap": "",
+        "horaip": "",
+        "horafp": "",
+        "edifp": "",
+        "aulap": "",
+        "ordenp": "0"
     }
-    input_df = input_df.rename(columns=columns_mapping)
-    output_columns = [
-        "NRC", "Clave", "Materia", "Sec", "CR", "CUP", "DIS",
-        "Ses", "Hora", "Días", "Edif", "Aula", "Profesor"
-    ]
-    output_df = input_df[output_columns]
-    output_df = output_df.dropna(how='all').reset_index(drop=True)
-    return output_df
 
-# Modificar días a nombres válidos
-days_mapping = {
-    "L": "Lunes", "M": "Martes", "I": "Miércoles", "J": "Jueves", "V": "Viernes",
-    "lunes": "Lunes", "martes": "Martes", "miércoles": "Miércoles", "jueves": "Jueves", "viernes": "Viernes",
-    "LUNES": "Lunes", "MARTES": "Martes", "MIÉRCOLES": "Miércoles", "JUEVES": "Jueves", "VIERNES": "Viernes",
-}
+# Función para extraer las opciones del formulario
+def fetch_form_options_with_descriptions(url):
+    try:
+        response = requests.get(url, timeout=10)  # Se agrega un timeout
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            important_fields = ["ciclop", "cup"]  # Los campos que nos interesan
+            options_data = {}
 
-# Función para limpiar los días
+            for field_name in important_fields:
+                select_tag = soup.find("select", {"name": field_name})
+                if select_tag:
+                    options = []
+                    for option in select_tag.find_all("option"):
+                        value = option.get("value", "").strip()
+                        description = option.get_text(strip=True)  # Obtener solo el texto visible
+                        if value and description:  # Solo incluir las opciones válidas
+                            options.append({"value": value, "description": description})
+                    options_data[field_name] = options
+
+            return options_data
+    except requests.exceptions.RequestException as e:
+        print(f"Error al obtener las opciones del formulario: {e}")
+    return None
+
+# Función para procesar subtablas
+def process_subtable(subtable, row_data, column_name):
+    rows = subtable.find_all("tr")
+    sub_rows = []
+    for row in rows:
+        cols = [col.get_text(strip=True) for col in row.find_all("td")]
+        if cols:  # Solo procesar filas no vacías
+            new_row = row_data.copy()  # Copiamos la fila base
+            new_row[column_name] = " | ".join(cols)  # Convertimos columnas en texto concatenado
+            sub_rows.append(new_row)  # Agregar la nueva fila procesada
+    return sub_rows
+
+# Función para extraer sesiones y profesor
+def extract_sessions_and_professor(cell):
+    session_table = cell.find("table")
+    session_rows = []
+    professor_rows = []
+
+    if session_table:
+        # Procesar las filas de la tabla de sesiones
+        session_rows = process_subtable(session_table, {}, "Ses/Hora/Días/Edif/Aula/Periodo")
+        
+        # Buscar la tabla interna de profesores
+        professor_table = session_table.find_next("table")
+        if professor_table:
+            # Procesar las filas de la tabla de profesores
+            professor_rows = process_subtable(professor_table, {}, "Ses/Profesor")
+
+    # Convertir la información de profesores a una lista de diccionarios legible
+    professor_info = [
+        {"Ses/Profesor": row.get("Ses/Profesor", "")}
+        for row in professor_rows
+    ] if professor_rows else []
+
+    return session_rows, professor_info
+
+# Función para extraer datos de la tabla principal
+def extract_table_data(soup):
+    table = soup.find("table", {"border": "1"})
+    rows = []
+
+    for tr in table.find_all("tr")[2:]:  # Saltar los encabezados
+        cells = tr.find_all("td")
+        if len(cells) < 8:
+            continue  # Ignorar filas incompletas
+
+        # Datos base de la fila
+        base_row = {
+            "NRC": cells[0].get_text(strip=True),
+            "Clave": cells[1].get_text(strip=True),
+            "Materia": cells[2].get_text(strip=True),
+            "Sec": cells[3].get_text(strip=True),
+            "CR": cells[4].get_text(strip=True),
+            "CUP": cells[5].get_text(strip=True),
+            "DIS": cells[6].get_text(strip=True),
+        }
+
+        # Procesar subtablas
+        session_cell = cells[7]
+        session_rows, professor_info = extract_sessions_and_professor(session_cell)
+
+        # Crear filas para cada sesión
+        for session_row in session_rows:
+            new_row = base_row.copy()
+
+            # Dividir "Ses/Hora/Días/Edif/Aula/Periodo" en columnas
+            session_parts = session_row.get("Ses/Hora/Días/Edif/Aula/Periodo", "").split(" | ")
+            new_row["Sesión"] = session_parts[0] if len(session_parts) > 0 else ""
+            new_row["Hora"] = session_parts[1] if len(session_parts) > 1 else ""
+            new_row["Días"] = session_parts[2] if len(session_parts) > 2 else ""
+            new_row["Edificio"] = session_parts[3] if len(session_parts) > 3 else ""
+            new_row["Aula"] = session_parts[4] if len(session_parts) > 4 else ""
+            new_row["Periodo"] = session_parts[5] if len(session_parts) > 5 else ""
+
+            # Agregar "Profesor" como texto concatenado
+            new_row["Profesor"] = ", ".join(
+                prof.get("Ses/Profesor", "") for prof in professor_info
+            ) if professor_info else ""
+
+            rows.append(new_row)
+
+    return rows
+
+# Función para realizar la solicitud POST y extraer datos
+def fetch_table_data(post_url, post_data):
+    try:
+        response = requests.post(post_url, data=post_data, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            rows = extract_table_data(soup)
+            return pd.DataFrame(rows)
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error al obtener los datos: {e}")
+    return None
+
+
+# Mapeo de días para conversión
+days_mapping = {"L": "Lunes", "M": "Martes", "I": "Miércoles", "J": "Jueves", "V": "Viernes"}
+
 def clean_days(value):
+    """
+    Convierte códigos de días a nombres completos (e.g., 'L' -> 'Lunes').
+    """
     if isinstance(value, str):
         possible_days = value.strip().split()
-        cleaned_days = [days_mapping.get(day, None) for day in possible_days]
-        return [day for day in cleaned_days if day is not None]
+        return [days_mapping.get(day, day) for day in possible_days]
     return []
 
-# Función para procesar y transformar los datos
-def process_data(first_sheet):
-    first_sheet = first_sheet.iloc[1:]
-    columns_to_extract = ["NRC", "Materia", "Sec", "Ses", "Hora", "Días", "Edif", "Aula", "Profesor"]
-    first_sheet = first_sheet[columns_to_extract]
-    first_sheet.columns = ["NRC", "Materia", "Sección", "Sesión", "Hora", "Días", "Edificio", "Aula", "Profesor"]
-    first_sheet.loc[:, "Materia"] = first_sheet["Materia"].ffill().infer_objects()
-    first_sheet.loc[:, "NRC"] = first_sheet["NRC"].ffill().infer_objects()
-    first_sheet.loc[:, "Sección"] = first_sheet["Sección"].ffill().infer_objects()
-    first_sheet.loc[:, "Profesor"] = first_sheet["Profesor"].ffill().infer_objects()
-    first_sheet = first_sheet.dropna(subset=["Sesión", "Hora", "Días"])
+def format_cell(row):
+    """
+    Formatea la información de cada materia, edificio y aula para mostrarse en el horario.
+    """
+    materia = row.get('Materia', "")
+    edificio = row.get('Edificio', "")[-1] if isinstance(row.get('Edificio', ""), str) else ""
+    aula = row.get('Aula', "")
+    return f"{materia}\n{edificio} {aula}"
 
-    first_sheet["Días"] = first_sheet["Días"].apply(clean_days)
 
-    def parse_time_range(time_string):
-        try:
-            start, end = time_string.split("-")
-            start_dt = pd.to_datetime(start.strip(), format="%H%M")
-            end_dt = pd.to_datetime(end.strip(), format="%H%M")
-            start_12h = start_dt.strftime("%I:%M %p")
-            end_12h = end_dt.strftime("%I:%M %p")
-            return f"{start_12h} - {end_12h}"
-        except Exception:
-            return time_string
+# Aplicación principal
+st.title("Generador de Horarios")
 
-    first_sheet["Hora"] = first_sheet["Hora"].apply(parse_time_range)
-    expanded_data = first_sheet.explode("Días").reset_index(drop=True)
+# Obtener opciones del formulario
+form_options = fetch_form_options_with_descriptions(FORM_URL)
 
-    # Formatear datos según lo solicitado
-    def format_cell(row):
-        materia = row['Materia']
-        edificio = row['Edificio'][-1] if isinstance(row['Edificio'], str) else ""
-        aula = int(row['Aula']) if pd.notna(row['Aula']) else ""
-        return f"{materia}\n{edificio} {aula}"
+if form_options:
+    selected_options = {}
 
-    expanded_data["Contenido"] = expanded_data.apply(format_cell, axis=1)
-    return expanded_data
+    for field, options in form_options.items():
+        descriptions = [opt['description'] for opt in options]
+        values = [opt['value'] for opt in options]
 
-# Función para filtrar los datos según el NRC
-def filter_by_nrc(data):
-    unique_nrcs = data[["NRC", "Materia", "Profesor"]].drop_duplicates()
+        # Mostrar un selectbox con las descripciones correspondientes
+        print(f"Selecciona una opción para {field}:")
+        for i, description in enumerate(descriptions):
+            print(f"{i + 1}: {description}")
+        
+        selected_index = int(input("Selecciona el número de la opción: ")) - 1
+        selected_value = values[selected_index]
 
-    selected_nrcs = st.multiselect("Selecciona los NRC de las materias que deseas incluir:", options=unique_nrcs["NRC"].astype(str).tolist())
+        selected_options[field] = {"value": selected_value, "description": descriptions[selected_index]}
 
-    data["NRC"] = data["NRC"].astype(str)
-    filtered_data = data[data["NRC"].isin(selected_nrcs)]
+    print("Opciones seleccionadas:", selected_options)
 
-    if not filtered_data.empty:
-        st.success(f"Se encontraron {len(filtered_data)} registros para los NRC seleccionados.")
-        st.write("Registros encontrados para los NRC seleccionados:")
-        st.dataframe(filtered_data)
-    else:
-        st.warning("No hay datos disponibles para los NRC seleccionados. Revisa los valores seleccionados.")
+    # Campo adicional para ingresar la carrera (majrp)
+    carrera_input = st.text_input("Ingresa el valor de la carrera (majrp):")
+    if carrera_input:
+        selected_options["majrp"] = {"value": carrera_input}
+    
+    # Mostrar resultados seleccionados
+    st.write("Opciones seleccionadas:")
+    st.json({key: value["value"] for key, value in selected_options.items()})
 
-    return filtered_data
-
-# Función para crear la hoja de horario y combinar celdas
-def create_schedule_sheet(expanded_data):
-    hours_list = [
-        "07:00 AM - 07:59 AM", "08:00 AM - 08:59 AM", "09:00 AM - 09:59 AM", "10:00 AM - 10:59 AM",
-        "11:00 AM - 11:59 AM", "12:00 PM - 12:59 PM", "01:00 PM - 01:59 PM", "02:00 PM - 02:59 PM",
-        "03:00 PM - 03:59 PM", "04:00 PM - 04:59 PM", "05:00 PM - 05:59 PM", "06:00 PM - 06:59 PM",
-        "07:00 PM - 07:59 PM", "08:00 PM - 08:59 PM"
-    ]
-    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
-
-    # Crear un DataFrame inicial
-    schedule = pd.DataFrame(columns=["Hora"] + days)
-    schedule["Hora"] = hours_list
-
-    for _, row in expanded_data.iterrows():
-        for hour_range in hours_list:
-            start_hour, end_hour = [pd.to_datetime(hr, format="%I:%M %p") for hr in hour_range.split(" - ")]
-            class_start, class_end = [pd.to_datetime(hr, format="%I:%M %p") for hr in row["Hora"].split(" - ")]
-            if start_hour < class_end and class_start < end_hour:
-                day_col = row["Días"]
-                content = row['Contenido']
-                if pd.notna(schedule.loc[schedule["Hora"] == hour_range, day_col].values[0]):
-                    schedule.loc[schedule["Hora"] == hour_range, day_col] += "\n" + content
-                else:
-                    schedule.loc[schedule["Hora"] == hour_range, day_col] = content
-
-    # Crear un nuevo libro Excel con openpyxl
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Horario"
-
-    # Estilos básicos
-    header_font = Font(bold=True)
-    header_fill = PatternFill(start_color="FFDDC1", end_color="FFDDC1", fill_type="solid")
-    thin_border = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin")
-    )
-
-    # Agregar encabezados al archivo Excel
-    for c_idx, column_title in enumerate(schedule.columns, 1):
-        cell = ws.cell(row=1, column=c_idx, value=column_title)
-        # Aplicar estilos a los encabezados
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.fill = header_fill
-        cell.border = thin_border
-
-    # Agregar los datos al archivo Excel (empezando en la fila 2)
-    for r_idx, row in enumerate(schedule.values, 2):
-        for c_idx, value in enumerate(row, 1):
-            cell = ws.cell(row=r_idx, column=c_idx, value=value)
-            # Estilos para las celdas de datos
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.border = thin_border
-
-    # Ajustar el tamaño de las columnas
-    for col in ws.columns:
-        col_letter = get_column_letter(col[0].column)
-        if col_letter == 'A':
-            ws.column_dimensions[col_letter].width = 10
+    # Consultar y procesar datos
+    if st.button("Consultar y generar horario"):
+        if "ciclop" not in selected_options or not selected_options["ciclop"]["value"]:
+            st.error("Debes seleccionar un ciclo antes de continuar.")
         else:
-            max_length = 0
-            for cell in col:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except:
-                    pass
-            adjusted_width = min((max_length + 2), 25)
-            ws.column_dimensions[col_letter].width = adjusted_width
+            post_data = build_post_data(selected_options)
+            table_data = fetch_table_data(POST_URL, post_data)
 
-    # Combinar celdas para clases que abarcan más de una hora
-    for col_idx, column_title in enumerate(schedule.columns[1:], 2):
-        for r_idx in range(2, len(hours_list) + 2):
-            cell_value = ws.cell(row=r_idx, column=col_idx).value
-            if cell_value:
-                merge_start = r_idx
-                while r_idx <= len(hours_list) + 1 and ws.cell(row=r_idx, column=col_idx).value == cell_value:
-                    r_idx += 1
-                merge_end = r_idx - 1
-                if merge_start < merge_end:
-                    ws.merge_cells(start_row=merge_start, start_column=col_idx, end_row=merge_end, end_column=col_idx)
-                    merged_cell = ws.cell(row=merge_start, column=col_idx)
-                    merged_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            if table_data is not None and not table_data.empty:
+                st.write("Datos obtenidos de la página:")
+                st.dataframe(table_data)
 
-    return wb
-
-
-def main():
-    st.title("Generador de Horarios a partir de Excel")
-
-    uploaded_file = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
-    if uploaded_file is not None:
-        input_df = pd.ExcelFile(uploaded_file).parse(0)
-        st.write("Vista previa del archivo original:")
-        st.dataframe(input_df.head())
-
-        output_df = transform_excel(input_df)
-        expanded_data = process_data(output_df)
-
-        st.write("Datos procesados:")
-        st.dataframe(expanded_data)
-
-        filtered_data = filter_by_nrc(expanded_data)
-        if not filtered_data.empty:
-            if st.button("Generar horario", key="generate_schedule"):
-                wb = create_schedule_sheet(filtered_data)
-                file_path = "/tmp/horario_generado.xlsx"
-                wb.save(file_path)
-
-                # Proveer un enlace para descargar el archivo
-                st.success("Horario generado con éxito.")
+                # Exportar a Excel
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    table_data.to_excel(writer, index=False, sheet_name="Horario")
                 st.download_button(
-                    label="Descargar archivo Excel",
-                    data=open(file_path, "rb").read(),
-                    file_name="horario_generado.xlsx",
+                    label="Descargar horario en Excel",
+                    data=buffer,
+                    file_name="horario.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+            else:
+                st.error("No se pudo obtener información de la página.")
+else:
+    st.error("No se pudieron obtener las opciones del formulario.")
 
-
-# Ejecutar la función principal
-if __name__ == "__main__":
-    main()
