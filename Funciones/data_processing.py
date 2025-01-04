@@ -107,7 +107,7 @@ def process_data_from_web(df):
         except Exception:
             return time_string
 
-    df["Días"] = df["Días"].apply(clean_days)
-    df["Hora"] = df["Hora"].apply(parse_time_range)
+    df.loc[:, "Días"] = df["Días"].apply(clean_days)
+    df.loc[:, "Hora"] = df["Hora"].apply(parse_time_range)
     expanded_data = df.explode("Días").reset_index(drop=True)
     return expanded_data
