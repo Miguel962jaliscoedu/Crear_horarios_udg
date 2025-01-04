@@ -67,9 +67,16 @@ def extract_table_data(soup):
                 new_row["Aula"] = session_parts[4] if len(session_parts) > 4 else ""
                 new_row["Periodo"] = session_parts[5] if len(session_parts) > 5 else ""
 
-                new_row["Profesor"] = ", ".join(prof.get("Ses/Profesor", "") for prof in professor_info) if professor_info else ""
+                profesores = [prof.get("Ses/Profesor", "") for prof in professor_info] if professor_info else []
+                for profesor_completo in profesores:  # Iterar sobre la lista de profesores
+                    ses_prof_parts = profesor_completo.split(" | ", 1) # Dividir por " | " una sola vez
+                    ses = ses_prof_parts[0] if len(ses_prof_parts) > 0 else ""
+                    profesor = ses_prof_parts[1] if len(ses_prof_parts) > 1 else ""
 
-                rows.append(new_row)
+                    new_row["Ses"] = ses
+                    new_row["Profesor"] = profesor
+                    rows.append(new_row)
+                
         except Exception as e:
             raise Exception(f"Error procesando una fila de la tabla: {e}")
 
