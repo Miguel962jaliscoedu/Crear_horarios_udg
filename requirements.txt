@@ -1,7 +1,8 @@
-streamlit
+lxml
 pandas
+streamlit
 openpyxl
 datetime
 requests
-beautifulsoup4
 reportlab
+beautifulsoup4
