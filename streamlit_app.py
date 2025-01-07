@@ -9,7 +9,7 @@ from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
 # Configuración de la página
 st.set_page_config(
     page_title="Generador de Horarios",
-    page_icon="",  # Icono de calendario
+    page_icon="📅",  # Icono de calendario
     layout="wide",  # Diseño ancho para aprovechar el espacio
 )
 
