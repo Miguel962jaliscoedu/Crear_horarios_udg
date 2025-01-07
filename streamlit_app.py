@@ -1,10 +1,13 @@
 #streamlit_app.py
 
-import streamlit as st
+import os
 import pandas as pd
+import streamlit as st
 from Funciones.form_handler import fetch_form_options_with_descriptions, build_post_data, show_abbreviations,FORM_URL, POST_URL
 from Funciones.data_processing import fetch_table_data, process_data_from_web
 from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
+
+VERSION = os.environ.get("VERSION", "Version de desarrollo")
 
 # Configuración de la página
 st.set_page_config(
@@ -14,7 +17,7 @@ st.set_page_config(
 )
 
 # Título principal con mejor formato
-st.title("Generador de Horarios ")
+st.markdown("<h1 style='text-align: center;'>📅Crea tu horario de clases ‎ </h1>", unsafe_allow_html=True)
 st.markdown("---") # Separador visual
 
 # Inicialización del estado en la sesión (sin cambios)
@@ -30,7 +33,7 @@ def reset_query_state():
 
 # Consulta inicial
 if not st.session_state["query_state"]["done"]:
-    st.subheader("Selecciona los parámetros de la consulta:") # Subtítulo
+    st.subheader("Consulta la Oferta Academica:") # Subtítulo
 
     form_options = fetch_form_options_with_descriptions(FORM_URL)
 
@@ -145,3 +148,25 @@ else:
     if st.button("Nueva consulta", use_container_width=True): # Botón a ancho completo
         reset_query_state()
         st.rerun()
+
+st.markdown(
+    f"""
+    <style>
+    .footer {{
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        background-color: rgba(14, 17, 23);
+        color: #808080;
+        text-align: center;
+        padding: 5px;
+        font-size: 12px;
+        border-top: 1px solid #e0e0e0;
+    }}
+    </style>
+    <div class="footer">
+        Desarrollado con la ayuda de IA (ChatGPT y Gemini) | Versión: {VERSION}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
