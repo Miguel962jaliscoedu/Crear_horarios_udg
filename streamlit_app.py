@@ -75,7 +75,7 @@ if form_options:
             else:
                 st.warning("No se encontraron datos para las opciones seleccionadas.")
 else:
-    st.error("No se pudieron obtener las opciones del formulario. Verifica la URL.")
+    st.error("No se pudieron obtener las opciones del formulario")
 
 # Resto del código (después de la consulta inicial)
 if st.session_state["query_state"]["done"]:

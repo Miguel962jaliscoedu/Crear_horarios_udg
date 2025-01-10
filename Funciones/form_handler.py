@@ -61,7 +61,8 @@ def fetch_form_options_with_descriptions(url):
         return options_data
 
     except requests.exceptions.RequestException as e:
-        raise Exception(f"Error al obtener las opciones del formulario: {e}")
+        
+        st.markdown("<h4 style='text-align: center;'>SIIAU NO FUNCIONA ＞︿＜</h4>", unsafe_allow_html=True)
         
 def show_abbreviations(cup_value):
     """Muestra la tabla de abreviaturas y devuelve un diccionario de carreras."""
