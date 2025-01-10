@@ -2,7 +2,7 @@
 
 def clean_days(value):
     days_mapping = {
-        "L": "Lunes", "M": "Martes", "I": "Miércoles", "J": "Jueves", "V": "Viernes", "S": "Sabado"
+        "L": "Lunes", "M": "Martes", "I": "Miércoles", "J": "Jueves", "V": "Viernes", "S": "Sábado"
     }
     if isinstance(value, str):
         possible_days = list(value.strip())

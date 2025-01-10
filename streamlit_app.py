@@ -20,61 +20,66 @@ st.set_page_config(
 st.markdown("<h1 style='text-align: center;'>📅Crea tu horario de clases ‎ </h1>", unsafe_allow_html=True)
 st.markdown("---") # Separador visual
 
-# Inicialización del estado en la sesión (sin cambios)
+# Inicialización del estado de la sesión
 if "query_state" not in st.session_state:
     st.session_state["query_state"] = {"done": False, "table_data": None, "selected_nrcs": []}
 if "expanded_data" not in st.session_state:
     st.session_state.expanded_data = pd.DataFrame()
+if "selected_options" not in st.session_state:
+    st.session_state.selected_options = {}
 
 def reset_query_state():
-    """Restablece el estado para una nueva consulta."""
     st.session_state["query_state"] = {"done": False, "table_data": None, "selected_nrcs": []}
     st.session_state.expanded_data = pd.DataFrame()
 
 # Consulta inicial
-if not st.session_state["query_state"]["done"]:
-    st.subheader("Consulta la Oferta Academica:") # Subtítulo
+st.subheader("Consulta la Oferta Academica:")
 
-    form_options = fetch_form_options_with_descriptions(FORM_URL)
+form_options = fetch_form_options_with_descriptions(FORM_URL)
+selected_options = {}
 
-    if form_options:
-        selected_options = {}
+if form_options:
+    for field, options in form_options.items():
+        # *** MODIFICACIÓN CLAVE: Concatenación de value y description ***
+        display_options = [f"{option['value']} - {option['description']}" for option in options]
+        selected_display_option = st.selectbox(f"Selecciona una opción para {field}:", display_options)
+        selected_value = selected_display_option.split(" - ")[0]
+        selected_description = selected_display_option.split(" - ")[1]
+        selected_options[field] = {"value": selected_value, "description": selected_description}
 
-        for field, options in form_options.items():
-            options_dict = {option["description"]: option["value"] for option in options}
-            selected_description = st.selectbox(f"Selecciona una opción para {field}:", options_dict.keys())
-            selected_value = options_dict[selected_description]
-            selected_options[field] = {"value": selected_value, "description": selected_description}
+    if "cup" in selected_options:
+        carreras_dict = show_abbreviations(selected_options["cup"]["value"])
+        if carreras_dict:
+            display_carreras = [f"{abreviatura} - {descripcion}" for abreviatura, descripcion in carreras_dict.items()]
+            selected_display_carrera = st.selectbox("Selecciona la carrera:", display_carreras)
+            st.warning("Asegúrate de seleccionar la opción CORRECTA para la carrera, ya que algunos centros universitarios tienen claves de carrera DUPLICADAS.")
+            selected_carrera_abreviatura = selected_display_carrera.split(" - ")[0]
+            selected_carrera_descripcion = selected_display_carrera.split(" - ")[1]
+            selected_options["majrp"] = {"value": selected_carrera_abreviatura, "description": selected_carrera_descripcion}
+        else:
+            st.warning("No se pudieron obtener las carreras.")
 
-        if "cup" in selected_options:
-            carreras_dict = show_abbreviations(selected_options["cup"]["value"])
-            if carreras_dict:
-                selected_carrera_description = st.selectbox("Selecciona la carrera:", list(carreras_dict.values()))
-                st.warning("Asegúrate de seleccionar la opción CORRECTA para la carrera, ya que algunos centros universitarios tienen claves de carrera DUPLICADAS.")
-                selected_carrera_abreviatura = list(carreras_dict.keys())[list(carreras_dict.values()).index(selected_carrera_description)]
-                selected_options["majrp"] = {"value": selected_carrera_abreviatura, "description": selected_carrera_description}
+    if st.button("Consultar", use_container_width=True):
+        if "ciclop" not in selected_options or not selected_options["ciclop"]["value"]:
+            st.error("Debes seleccionar un ciclo antes de continuar.")
+        else:
+            post_data = build_post_data(selected_options)
+            table_data = fetch_table_data(POST_URL, post_data)
+
+            if table_data is not None and not table_data.empty:
+                st.session_state["query_state"]["done"] = True
+                st.session_state["query_state"]["table_data"] = table_data
+                st.session_state["query_state"]["selected_nrcs"] = []
+                st.session_state.selected_options = selected_options
+                st.rerun()
             else:
-                st.warning("No se pudieron obtener las carreras.")
-
-        if st.button("Consultar", use_container_width=True): # Botón a ancho completo
-            if "ciclop" not in selected_options or not selected_options["ciclop"]["value"]:
-                st.error("Debes seleccionar un ciclo antes de continuar.")
-            else:
-                post_data = build_post_data(selected_options)
-                table_data = fetch_table_data(POST_URL, post_data)
-
-                if table_data is not None and not table_data.empty:
-                    st.session_state["query_state"]["done"] = True
-                    st.session_state["query_state"]["table_data"] = table_data
-                    st.session_state["query_state"]["selected_nrcs"] = []
-                    st.rerun()
-                else:
-                    st.warning("No se encontraron datos para las opciones seleccionadas.")
-    else:
-        st.error("No se pudieron obtener las opciones del formulario. Verifica la URL.")
+                st.warning("No se encontraron datos para las opciones seleccionadas.")
 else:
-    table_data = st.session_state["query_state"]["table_data"]
+    st.error("No se pudieron obtener las opciones del formulario. Verifica la URL.")
 
+# Resto del código (después de la consulta inicial)
+if st.session_state["query_state"]["done"]:
+    table_data = st.session_state["query_state"]["table_data"]
     if table_data is not None and not table_data.empty:
         if st.session_state.expanded_data.empty or not st.session_state.expanded_data.equals(table_data):
             st.session_state.expanded_data = process_data_from_web(table_data)
@@ -113,41 +118,51 @@ else:
             else:
                 st.write("Selecciona al menos un NRC para ver las materias correspondientes.")
 
-            if st.button("Generar horario", use_container_width=True): # Botón a ancho completo
-                if selected_nrcs:
-                    filtered_data = expanded_data[expanded_data["NRC"].isin(selected_nrcs)]
-                    if not filtered_data.empty:
-                        schedule = create_schedule_sheet(filtered_data)
-                        st.write("Horario generado:")
-                        if schedule is not None and not schedule.empty:
-                            st.dataframe(schedule)
-                            try: #Manejo de errores al generar el pdf
-                                pdf_buffer = create_schedule_pdf(schedule)
-                                st.download_button(
-                                    label="Descargar Horario (PDF)",
-                                    data=pdf_buffer.getvalue(),
-                                    file_name="horario.pdf",
-                                    mime="application/pdf",
-                                )
-                                pdf_buffer.close()
-                            except Exception as e:
-                                st.error(f"Ocurrió un error al generar el PDF: {e}")
-                                import traceback
-                                traceback.print_exc()
+            if st.button("Generar horario", use_container_width=True):
+                if 'selected_options' in st.session_state and 'ciclop' in st.session_state.selected_options and 'description' in st.session_state.selected_options['ciclop']:
+                    ciclo = st.session_state.selected_options["ciclop"]["description"]
+                    if selected_nrcs:
+                        filtered_data = expanded_data[expanded_data["NRC"].isin(selected_nrcs)]
+                        if not filtered_data.empty:
+                            schedule = create_schedule_sheet(filtered_data)
+                            st.write("Horario generado:")
+                            if schedule is not None and not schedule.empty:
+                                st.dataframe(schedule)
+                                try:
+                                    pdf_base64 = create_schedule_pdf(schedule, ciclo, as_base64=True)
+                                    pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="800" type="application/pdf"></iframe>'
+                                    st.markdown(pdf_display, unsafe_allow_html=True)
+
+                                    pdf_buffer = create_schedule_pdf(schedule, ciclo) #Ya no es necesario pasar el parametro as_base64
+                                    st.download_button(
+                                        label="Descargar Horario (PDF)",
+                                        data=pdf_buffer.getvalue(),
+                                        file_name="horario.pdf",
+                                        mime="application/pdf",
+                                    )
+                                    pdf_buffer.close()
+                                except Exception as e:
+                                    st.error(f"Ocurrió un error al generar el PDF: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                            else:
+                                st.warning("No se pudo generar el horario. Verifica los datos.")
                         else:
-                            st.warning("No se pudo generar el horario. Verifica los datos.")
+                            st.warning("No hay datos para generar el horario con los NRCs seleccionados.")
                     else:
-                        st.warning("No hay datos para generar el horario con los NRCs seleccionados.")
+                        st.warning("Selecciona al menos un NRC.")
                 else:
-                    st.warning("Selecciona al menos un NRC.")
+                    st.error("No se pudo obtener la información del ciclo. Por favor, realiza una nueva consulta.")
+
         else:
             st.warning("Selecciona al menos una materia, ya que no se encontraron las columnas 'Materia' o 'NRC' en los datos procesados.")
     else:
         st.warning("No se han obtenido datos de la consulta inicial. Realiza una consulta primero.")
 
-    if st.button("Nueva consulta", use_container_width=True): # Botón a ancho completo
-        reset_query_state()
-        st.rerun()
+if st.button("Nueva consulta", use_container_width=True):
+    reset_query_state()
+    st.rerun()
+
 
 st.markdown(
     f"""

@@ -1,11 +1,17 @@
 # schedule.py
 
 import io
+import base64
+import numpy as np
 import pandas as pd
-from reportlab.lib import colors, pagesizes, units
+from datetime import datetime
+from reportlab.lib import colors, units
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import Table, TableStyle, SimpleDocTemplate, Paragraph
+
+INSTITUTION_NAME = "UNIVERSIDAD DE GUADALAJARA"
 
 # Función para crear la tabla del horario
 def create_schedule_sheet(expanded_data):
@@ -15,7 +21,7 @@ def create_schedule_sheet(expanded_data):
         "03:00 PM - 03:59 PM", "04:00 PM - 04:59 PM", "05:00 PM - 05:59 PM", "06:00 PM - 06:59 PM",
         "07:00 PM - 07:59 PM", "08:00 PM - 08:59 PM"
     ]
-    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sabado"]
+    days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
     schedule = pd.DataFrame(columns=["Hora"] + days)
     schedule["Hora"] = hours_list
 
@@ -38,98 +44,168 @@ def create_schedule_sheet(expanded_data):
                     schedule.loc[schedule["Hora"] == hour_range, day_col] += "\n" + content
                 else:
                     schedule.loc[schedule["Hora"] == hour_range, day_col] = content
+
     return schedule
 
-def create_schedule_pdf(schedule):
-    buffer = io.BytesIO()
-    stylesheet = getSampleStyleSheet()
-
-    data_with_paragraphs = []
-    for row in schedule.values.tolist():
-        new_row = []
-        for cell_content in row:
-            if pd.isna(cell_content):
-                new_row.append("")
-            elif isinstance(cell_content, str):
-                p_style = ParagraphStyle(name='Normal',
-                                         fontName='Helvetica',
-                                         fontSize=8,
-                                         alignment=1,
-                                         leading=10,
-                                         wordWrap='CJK')
-                p = Paragraph(cell_content, p_style)
-                new_row.append(p)
-            else:
-                new_row.append(cell_content)
-        data_with_paragraphs.append(new_row)
-
-    data_with_paragraphs.insert(0, schedule.columns.tolist())
-
-    # Márgenes reducidos (ajusta estos valores según necesites)
-    margin_left = 0.2 * units.inch
-    margin_right = 0.2 * units.inch
-    margin_top = 0.2 * units.inch
-    margin_bottom = 0.2 * units.inch
-
-    available_width = landscape(letter)[0] - (margin_left + margin_right) #Ancho disponible considerando margenes
-    available_height = landscape(letter)[1] - (margin_top + margin_bottom)
-
-    # Ancho fijo para la columna "Hora"
-    hora_col_width = 0.8 * units.inch #Ancho fijo para la columna de hora
-    col_widths = [hora_col_width] #Inicializar col_widths con el ancho fijo de la columna de hora
-
-    # Cálculo del ancho de las demás columnas basado en el contenido del párrafo
-    for i, col in enumerate(schedule.columns[1:]): #Iterar desde la segunda columna en adelante
-        max_width_col = 0
-        for row in data_with_paragraphs[1:]:
-            if isinstance(row[i + 1], Paragraph): #row[i+1] porque se empieza desde la segunda columna
-                width, height = row[i + 1].wrapOn(None, (available_width - hora_col_width)/(len(schedule.columns)-1), available_height) #Ancho disponible menos el de la columna de hora y dividido entre el numero de columnas restantes
-                max_width_col = max(max_width_col, width)
-        col_widths.append(max_width_col)
-
-
-    table = Table(data_with_paragraphs, colWidths=col_widths)
-
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3)
-    ]))
-
-    # Detectar desbordamiento y ajustar el tamaño de fuente si es necesario
-    w, h = table.wrapOn(None, available_width, available_height)
-    while w > available_width:
-        for row in data_with_paragraphs[1:]:
-          for cell in row:
-            if isinstance(cell, Paragraph):
-              cell.style.fontSize -= 0.5
-              cell.style.leading = cell.style.fontSize * 1.25
-        table = Table(data_with_paragraphs, colWidths=col_widths)
-        w, h = table.wrapOn(None, available_width, available_height)
-        if cell.style.fontSize <= 4:
-          print("No se pudo ajustar la tabla al ancho de la página.")
-          break
-
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), leftMargin=margin_left, rightMargin=margin_right, topMargin=margin_top, bottomMargin=margin_bottom) #Usar los margenes definidos
-    elements = [table]
-
+def create_schedule_pdf(schedule, ciclo, as_base64=False):
     try:
+        buffer = io.BytesIO()
+        styles = getSampleStyleSheet()
+        dias_semana = ["Hora", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
+
+        # *** Lógica CORREGIDA y MEJORADA para el Sábado ***
+        if "Sábado" in schedule.columns:
+            sabado_data = schedule["Sábado"].iloc[1:].replace("", np.nan).replace(" ", np.nan)
+            sabado_data = sabado_data.dropna()
+            if not sabado_data.empty:
+                dias_semana.append("Sábado")
+
+        # *** Lógica para ELIMINAR FILAS VACÍAS al principio y al final ***
+        filas_no_vacias = []
+        for index, row in schedule.iterrows():
+            if not all(pd.isna(x) or str(x).strip() == "" for x in row[1:]): # Verifica que no esten vacias las celdas de los dias
+                filas_no_vacias.append(index)
+
+        schedule = schedule.loc[filas_no_vacias].reset_index(drop=True) #Filtrar y reindexar en una sola linea
+
+        data_for_table = []
+        data_for_table.append(dias_semana)
+
+        horas = schedule.index.to_list()
+
+        # Estilos
+        style_title = ParagraphStyle(name='Title',parent=styles['Normal'],fontSize=18,leading=22,alignment=TA_CENTER,fontName='Helvetica-Bold',textColor=colors.darkblue,)
+        style_subtitle = ParagraphStyle(name='Subtitle',parent=styles['Normal'],fontSize=16,leading=20,alignment=TA_CENTER,textColor=colors.blue,)
+        style_materia = ParagraphStyle('Materia', parent=styles['Normal'], alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=9)
+        style_aula = ParagraphStyle('Aula', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, leading=9)
+        style_profesor = ParagraphStyle('Profesor', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, leading=9)
+        style_hora = ParagraphStyle('Hora', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, leading=9)
+
+        for index, row in schedule.iterrows():
+            hora = row["Hora"]
+            try:
+                hora_inicio, hora_fin = hora.split(" - ")
+            except (ValueError, AttributeError):
+                hora_inicio = hora
+                hora_fin = ""
+            p_hora_inicio = Paragraph(hora_inicio, style_hora)
+            p_hora_fin = Paragraph(hora_fin, style_hora)
+            hora_cell = [p_hora_inicio, p_hora_fin]
+
+            data_row = [hora_cell]
+            # *** Iteración sobre COLUMNAS (con dias_semana modificada) ***
+            for dia in dias_semana[1:]:
+                materia_data = row[dia]
+                if pd.isna(materia_data):
+                    data_row.append("")
+                else:
+                    parts = str(materia_data).split('\n')
+                    materia = parts[0] if len(parts) >= 1 else ""
+                    aula = parts[1] if len(parts) >= 2 else ""
+                    profesor = parts[2] if len(parts) >= 3 else ""
+                    data_row.append([Paragraph(materia, style_materia), Paragraph(aula, style_aula), Paragraph(profesor, style_profesor)])
+
+            data_for_table.append(data_row)
+
+        num_dias = len(dias_semana) - 1 #Calculo del numero de dias con la lista filtrada
+        hora_width = 0.7 * units.inch
+        left_margin = 0.5 * units.inch
+        right_margin = 0.5 * units.inch
+
+        available_width = landscape(letter)[0] - (left_margin + right_margin) - hora_width
+        col_width = available_width / num_dias
+
+        col_widths = [hora_width] + [col_width] * num_dias
+
+        # *** Lógica de FUSIÓN DE CELDAS ***
+        spans = []
+        for j in range(1, len(dias_semana)):
+            start_row = None
+            for i in range(1, len(horas) + 1):
+                if i < len(data_for_table) and j < len(data_for_table[0]):
+                    current_cell = data_for_table[i][j]
+                    prev_cell = data_for_table[i - 1][j] if i > 0 else None
+
+                    if current_cell != " " and prev_cell is not None:
+                        current_text = current_cell.getPlainText().strip() if isinstance(current_cell, Paragraph) else str(current_cell).strip()
+                        prev_text = prev_cell.getPlainText().strip() if isinstance(prev_cell, Paragraph) else str(prev_cell).strip()
+
+                        if current_text == prev_text:
+                            if start_row is None:
+                                start_row = i - 1
+                        else:
+                            if start_row is not None:
+                                spans.append(((j, start_row), (j, i - 1)))
+                                start_row = None
+                    elif start_row is not None: #Si la celda actual es vacia se guarda el span
+                        spans.append(((j, start_row), (j, i - 1)))
+                        start_row = None
+            if start_row is not None:
+                spans.append(((j, start_row), (j, len(horas))))
+
+
+        table = Table(data_for_table, colWidths=col_widths)
+        table_style = TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (0, 0), (-1, -1), 8), 
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('WORDWRAP', (1,1), (-1,-1), col_width) #Ajuste de texto considerando el ancho calculado
+        ])
+
+        for start, end in spans:
+            try:
+                table_style.add('SPAN', start, end)
+            except IndexError as e:
+                print(f"Error al aplicar span: {start}, {end}. Dimensiones de la tabla: {table.getSize()}")
+                traceback.print_exc()
+
+        table.setStyle(table_style)
+
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
+                                leftMargin=left_margin, rightMargin=right_margin, #Usar variables para los margenes
+                                topMargin=0.2 * units.inch, bottomMargin=1 * units.inch)
+
+        elements = []
+        elements.append(Paragraph(f"{INSTITUTION_NAME}", style_title))
+        elements.append(Paragraph(f"Horario de Clases - {ciclo}", style_subtitle))
+        elements.append(table)
+
+        # Pie de página con formato
+        fecha_generacion = datetime.now().strftime("%d/%m/%Y")
+        style_footer = ParagraphStyle(
+            name='Footer',
+            parent=styles['Normal'],
+            fontSize=10, #Tamaño de fuente para el footer
+            alignment=TA_CENTER,
+            textColor=colors.grey, #Color de texto para el footer
+            leading = 12
+        )
+
+        footer = Paragraph(f"Generado el: {fecha_generacion}", style_footer)
+        elements.append(footer) #Se agrega el footer a los elementos
+
         doc.build(elements)
+
+        if as_base64: #Si se solicita el pdf como base64
+            buffer.seek(0)
+            pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            return pdf_base64 #Regresar el string en base64
+        else:
+            buffer.seek(0)
+            return buffer
+
     except Exception as e:
         print(f"Error al construir el PDF: {e}")
         import traceback
         traceback.print_exc()
         return io.BytesIO()
-
-    buffer.seek(0)
-    return buffer
