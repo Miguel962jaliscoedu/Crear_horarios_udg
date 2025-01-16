@@ -1,20 +1,21 @@
-# schedule.py
-
+# Funciones/schedule.py
 import io
+import os
 import base64
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from Funciones.utils import obtener_fecha_guadalajara
 from reportlab.lib import colors, units
-from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import Table, TableStyle, SimpleDocTemplate, Paragraph
+import traceback
+from Diseño.styles import get_reportlab_styles
 
 INSTITUTION_NAME = "UNIVERSIDAD DE GUADALAJARA"
+URL_PAGINA = os.environ.get("URL_PAGINA")
 
-# Función para crear la tabla del horario
 def create_schedule_sheet(expanded_data):
+    """Crea una hoja de horario en formato pandas DataFrame."""
     hours_list = [
         "07:00 AM - 07:59 AM", "08:00 AM - 08:59 AM", "09:00 AM - 09:59 AM", "10:00 AM - 10:59 AM",
         "11:00 AM - 11:59 AM", "12:00 PM - 12:59 PM", "01:00 PM - 01:59 PM", "02:00 PM - 02:59 PM",
@@ -48,38 +49,29 @@ def create_schedule_sheet(expanded_data):
     return schedule
 
 def create_schedule_pdf(schedule, ciclo, as_base64=False):
+    """Crea un archivo PDF con el horario."""
     try:
         buffer = io.BytesIO()
-        styles = getSampleStyleSheet()
+        styles = get_reportlab_styles()
         dias_semana = ["Hora", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
-        # *** Lógica CORREGIDA y MEJORADA para el Sábado ***
         if "Sábado" in schedule.columns:
             sabado_data = schedule["Sábado"].iloc[1:].replace("", np.nan).replace(" ", np.nan)
             sabado_data = sabado_data.dropna()
             if not sabado_data.empty:
                 dias_semana.append("Sábado")
 
-        # *** Lógica para ELIMINAR FILAS VACÍAS al principio y al final ***
         filas_no_vacias = []
         for index, row in schedule.iterrows():
-            if not all(pd.isna(x) or str(x).strip() == "" for x in row[1:]): # Verifica que no esten vacias las celdas de los dias
+            if not all(pd.isna(x) or str(x).strip() == "" for x in row[1:]):
                 filas_no_vacias.append(index)
 
-        schedule = schedule.loc[filas_no_vacias].reset_index(drop=True) #Filtrar y reindexar en una sola linea
+        schedule = schedule.loc[filas_no_vacias].reset_index(drop=True)
 
         data_for_table = []
         data_for_table.append(dias_semana)
 
         horas = schedule.index.to_list()
-
-        # Estilos
-        style_title = ParagraphStyle(name='Title',parent=styles['Normal'],fontSize=18,leading=22,alignment=TA_CENTER,fontName='Helvetica-Bold',textColor=colors.darkblue,)
-        style_subtitle = ParagraphStyle(name='Subtitle',parent=styles['Normal'],fontSize=16,leading=20,alignment=TA_CENTER,textColor=colors.blue,)
-        style_materia = ParagraphStyle('Materia', parent=styles['Normal'], alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=9)
-        style_aula = ParagraphStyle('Aula', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, leading=9)
-        style_profesor = ParagraphStyle('Profesor', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, leading=9)
-        style_hora = ParagraphStyle('Hora', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, leading=9)
 
         for index, row in schedule.iterrows():
             hora = row["Hora"]
@@ -88,12 +80,12 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
             except (ValueError, AttributeError):
                 hora_inicio = hora
                 hora_fin = ""
-            p_hora_inicio = Paragraph(hora_inicio, style_hora)
-            p_hora_fin = Paragraph(hora_fin, style_hora)
+            p_hora_inicio = Paragraph(hora_inicio, styles['Hora'])
+            p_hora_fin = Paragraph(hora_fin, styles['Hora'])
             hora_cell = [p_hora_inicio, p_hora_fin]
 
             data_row = [hora_cell]
-            # *** Iteración sobre COLUMNAS (con dias_semana modificada) ***
+
             for dia in dias_semana[1:]:
                 materia_data = row[dia]
                 if pd.isna(materia_data):
@@ -103,11 +95,14 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
                     materia = parts[0] if len(parts) >= 1 else ""
                     aula = parts[1] if len(parts) >= 2 else ""
                     profesor = parts[2] if len(parts) >= 3 else ""
-                    data_row.append([Paragraph(materia, style_materia), Paragraph(aula, style_aula), Paragraph(profesor, style_profesor)])
-
+                    data_row.append([
+                        Paragraph(materia, styles['Materia']),
+                        Paragraph(aula, styles['Aula']),
+                        Paragraph(profesor, styles['Profesor'])
+                    ])
             data_for_table.append(data_row)
 
-        num_dias = len(dias_semana) - 1 #Calculo del numero de dias con la lista filtrada
+        num_dias = len(dias_semana) - 1
         hora_width = 0.7 * units.inch
         left_margin = 0.5 * units.inch
         right_margin = 0.5 * units.inch
@@ -117,7 +112,6 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
 
         col_widths = [hora_width] + [col_width] * num_dias
 
-        # *** Lógica de FUSIÓN DE CELDAS ***
         spans = []
         for j in range(1, len(dias_semana)):
             start_row = None
@@ -133,33 +127,29 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
                         if current_text == prev_text:
                             if start_row is None:
                                 start_row = i - 1
-                        else:
-                            if start_row is not None:
-                                spans.append(((j, start_row), (j, i - 1)))
-                                start_row = None
-                    elif start_row is not None: #Si la celda actual es vacia se guarda el span
-                        spans.append(((j, start_row), (j, i - 1)))
-                        start_row = None
+                            else:
+                                if start_row is not None:
+                                    spans.append(((j, start_row), (j, i - 1)))
+                                    start_row = None
             if start_row is not None:
                 spans.append(((j, start_row), (j, len(horas))))
-
 
         table = Table(data_for_table, colWidths=col_widths)
         table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTSIZE', (0, 0), (-1, -1), 8), 
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
             ('LEFTPADDING', (0, 0), (-1, -1), 2),
             ('RIGHTPADDING', (0, 0), (-1, -1), 2),
             ('TOPPADDING', (0, 0), (-1, -1), 2),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ('WORDWRAP', (1,1), (-1,-1), col_width) #Ajuste de texto considerando el ancho calculado
+            ('WORDWRAP', (1,1), (-1,-1), col_width)
         ])
 
         for start, end in spans:
@@ -172,40 +162,32 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
         table.setStyle(table_style)
 
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
-                                leftMargin=left_margin, rightMargin=right_margin, #Usar variables para los margenes
+                                leftMargin=left_margin, rightMargin=right_margin,
                                 topMargin=0.2 * units.inch, bottomMargin=1 * units.inch)
 
         elements = []
-        elements.append(Paragraph(f"{INSTITUTION_NAME}", style_title))
-        elements.append(Paragraph(f"Horario de Clases - {ciclo}", style_subtitle))
+        elements.append(Paragraph(f"{INSTITUTION_NAME}", styles['Title']))
+        elements.append(Paragraph(f"Horario de Clases - {ciclo}", styles['Subtitle']))
         elements.append(table)
+        
+        fecha_generacion = obtener_fecha_guadalajara()
+        footer_text = f"Creado el: {fecha_generacion}"
+        footer_link_text = f"Generado con ({URL_PAGINA})"
 
-        # Pie de página con formato
-        fecha_generacion = datetime.now().strftime("%d/%m/%Y")
-        style_footer = ParagraphStyle(
-            name='Footer',
-            parent=styles['Normal'],
-            fontSize=10, #Tamaño de fuente para el footer
-            alignment=TA_CENTER,
-            textColor=colors.grey, #Color de texto para el footer
-            leading = 12
-        )
-
-        footer = Paragraph(f"Generado el: {fecha_generacion}", style_footer)
-        elements.append(footer) #Se agrega el footer a los elementos
+        elements.append(Paragraph(footer_text, styles['Footer']))
+        elements.append(Paragraph(footer_link_text, styles['FooterLink']))
 
         doc.build(elements)
 
-        if as_base64: #Si se solicita el pdf como base64
+        if as_base64:
             buffer.seek(0)
             pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            return pdf_base64 #Regresar el string en base64
+            return pdf_base64
         else:
             buffer.seek(0)
             return buffer
 
     except Exception as e:
         print(f"Error al construir el PDF: {e}")
-        import traceback
         traceback.print_exc()
         return io.BytesIO()

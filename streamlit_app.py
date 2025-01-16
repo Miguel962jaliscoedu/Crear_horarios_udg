@@ -1,24 +1,27 @@
-#streamlit_app.py
-
+# streamlit_app.py
 import os
 import pandas as pd
 import streamlit as st
-from Funciones.form_handler import fetch_form_options_with_descriptions, build_post_data, show_abbreviations,FORM_URL, POST_URL
-from Funciones.data_processing import fetch_table_data, process_data_from_web
+from Diseño.styles import apply_dataframe_styles, set_page_style, apply_dataframe_styles_with_cruces,get_reportlab_styles
 from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
+from Funciones.data_processing import fetch_table_data, process_data_from_web
+from Funciones.utils import Clase, hay_cruce, detectar_cruces, crear_clases_desde_dataframe, generar_mensaje_cruces
+from Funciones.form_handler import fetch_form_options_with_descriptions, build_post_data, show_abbreviations,FORM_URL, POST_URL
 
 VERSION = os.environ.get("VERSION", "Version de desarrollo")
+URL_PAGINA = os.environ.get("URL_PAGINA","Web de desarrollo")
 
-# Configuración de la página
+# Configuración de la página y estilos generales
 st.set_page_config(
     page_title="Generador de Horarios",
-    page_icon="📅",  # Icono de calendario
-    layout="wide",  # Diseño ancho para aprovechar el espacio
+    page_icon="",
+    layout="wide",
 )
+set_page_style()
 
-# Título principal con mejor formato
+# Título principal
 st.markdown("<h1 style='text-align: center;'>📅Crea tu horario de clases ‎ </h1>", unsafe_allow_html=True)
-st.markdown("---") # Separador visual
+st.markdown("---")
 
 # Inicialización del estado de la sesión
 if "query_state" not in st.session_state:
@@ -40,7 +43,6 @@ selected_options = {}
 
 if form_options:
     for field, options in form_options.items():
-        # *** MODIFICACIÓN CLAVE: Concatenación de value y description ***
         display_options = [f"{option['value']} - {option['description']}" for option in options]
         selected_display_option = st.selectbox(f"Selecciona una opción para {field}:", display_options)
         selected_value = selected_display_option.split(" - ")[0]
@@ -77,7 +79,6 @@ if form_options:
 else:
     st.error("No se pudieron obtener las opciones del formulario")
 
-# Resto del código (después de la consulta inicial)
 if st.session_state["query_state"]["done"]:
     table_data = st.session_state["query_state"]["table_data"]
     if table_data is not None and not table_data.empty:
@@ -94,9 +95,11 @@ if st.session_state["query_state"]["done"]:
             filtered_by_subject = expanded_data.copy()
             if selected_subjects:
                 filtered_by_subject = expanded_data[expanded_data["Materia"].isin(selected_subjects)]
-
-            st.subheader("Información de las Materias Seleccionadas:")
-            st.dataframe(filtered_by_subject.reset_index(drop=True)) # Tabla con estilo
+            
+            if not filtered_by_subject.empty:
+                st.subheader("Información de las Materias Seleccionadas:")
+                styled_subject_df = apply_dataframe_styles(filtered_by_subject.reset_index(drop=True))
+                st.dataframe(styled_subject_df)
 
             st.subheader("Selecciona las clases que deseas incluir en tu horario:")
             unique_nrcs = filtered_by_subject["NRC"].unique().tolist()
@@ -109,10 +112,28 @@ if st.session_state["query_state"]["done"]:
 
             if selected_nrcs:
                 filtered_by_nrc = filtered_by_subject[filtered_by_subject["NRC"].isin(selected_nrcs)]
-                st.subheader("Clases seleccionadas:")
                 columns_to_show = [col for col in filtered_by_nrc.columns if col != "Sesión"]
+
                 if not filtered_by_nrc.empty:
-                    st.dataframe(filtered_by_nrc[columns_to_show].reset_index(drop=True)) # Tabla con estilo
+                # ... (mostrar tabla)
+                    try:
+                        clases_seleccionadas = crear_clases_desde_dataframe(filtered_by_nrc)
+                        cruces = detectar_cruces(clases_seleccionadas)
+
+                        styled_nrc_df = apply_dataframe_styles_with_cruces(filtered_by_nrc[columns_to_show].reset_index(drop=True), cruces)
+                        st.dataframe(styled_nrc_df, hide_index=True) # Oculta el índice directamente
+
+                        if cruces:
+                            st.warning("Se detectaron cruces de horario (resaltados en la tabla):")
+                            mensajes_cruces = generar_mensaje_cruces(cruces) # Obtener los mensajes formateados
+                            for mensaje in mensajes_cruces: # Mostrar los mensajes
+                                st.write(mensaje)
+                        else:
+                            st.success("No se detectaron cruces de horario.")
+
+                    except (ValueError, KeyError, Exception) as e:
+                        st.error(f"Error en la detección de cruces: {e}")
+                        st.stop()
                 else:
                     st.warning("No se encontraron materias con los NRC seleccionados.")
             else:
@@ -127,16 +148,18 @@ if st.session_state["query_state"]["done"]:
                             schedule = create_schedule_sheet(filtered_data)
                             st.write("Horario generado:")
                             if schedule is not None and not schedule.empty:
-                                st.dataframe(schedule)
+                                styled_schedule_df = apply_dataframe_styles(schedule)
+                                st.dataframe(styled_schedule_df)
                                 try:
                                     pdf_base64 = create_schedule_pdf(schedule, ciclo, as_base64=True)
                                     pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="800" type="application/pdf"></iframe>'
                                     st.markdown(pdf_display, unsafe_allow_html=True)
 
-                                    pdf_buffer = create_schedule_pdf(schedule, ciclo) #Ya no es necesario pasar el parametro as_base64
+                                    styles_pdf = get_reportlab_styles()
+                                    pdf_buffer = create_schedule_pdf(schedule, ciclo, URL_PAGINA)
                                     st.download_button(
                                         label="Descargar Horario (PDF)",
-                                        data=pdf_buffer.getvalue(),
+                                        data=pdf_buffer,
                                         file_name="horario.pdf",
                                         mime="application/pdf",
                                     )
@@ -163,22 +186,8 @@ if st.button("Nueva consulta", use_container_width=True):
     reset_query_state()
     st.rerun()
 
-
 st.markdown(
     f"""
-    <style>
-    .footer {{
-        position: fixed;
-        bottom: 0;
-        width: 100%;
-        background-color: rgba(14, 17, 23);
-        color: #808080;
-        text-align: center;
-        padding: 5px;
-        font-size: 12px;
-        border-top: 1px solid #e0e0e0;
-    }}
-    </style>
     <div class="footer">
         Desarrollado con la ayuda de IA (ChatGPT y Gemini) | Versión: {VERSION}
     </div>

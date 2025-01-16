@@ -1,0 +1,7 @@
+[theme]
+base="dark"
+primaryColor="#29ABE2" # Azul claro (acentos)
+secondaryBackgroundColor="#1E1E1E" # Gris oscuro (fondo principal)
+backgroundColor="#121212" # Negro casi puro (fondo de la app)
+textColor="#EEEEEE" # Gris claro (texto)
+font="sans serif" # Fuente sans-serif para legibilidad
