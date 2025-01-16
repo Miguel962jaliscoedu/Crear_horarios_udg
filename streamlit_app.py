@@ -157,15 +157,15 @@ if st.session_state["query_state"]["done"]:
 
                                     styles_pdf = get_reportlab_styles()
                                     pdf_buffer = create_schedule_pdf(schedule, ciclo, URL_PAGINA)
-                                    st.download_button(
-                                        label="Descargar Horario (PDF)",
-                                        data=pdf_buffer,
-                                        file_name="horario.pdf",
-                                        mime="application/pdf",
+                                    #st.download_button(
+                                        #label="Descargar Horario (PDF)",
+                                        #data=pdf_buffer,
+                                        #file_name="horario.pdf",
+                                        #mime="application/pdf",
                                     )
-                                    pdf_buffer.close()
-                                except Exception as e:
-                                    st.error(f"Ocurrió un error al generar el PDF: {e}")
+                                    #pdf_buffer.close()
+                                #except #Exception as e:
+                                    #st.error(f"Ocurrió un error al generar el PDF: {e}")
                                     import traceback
                                     traceback.print_exc()
                             else:
