@@ -163,9 +163,9 @@ if st.session_state["query_state"]["done"]:
                                         #file_name="horario.pdf",
                                         #mime="application/pdf",
                                     #)
-                                    #pdf_buffer.close()
-                                #except #Exception as e:
-                                    #st.error(f"Ocurrió un error al generar el PDF: {e}")
+                                    pdf_buffer.close()
+                                except #Exception as e:
+                                    st.error(f"Ocurrió un error al generar el PDF: {e}")
                                     import traceback
                                     traceback.print_exc()
                             else:
