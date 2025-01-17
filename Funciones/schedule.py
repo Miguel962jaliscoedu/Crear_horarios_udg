@@ -172,7 +172,7 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
         
         fecha_generacion = obtener_fecha_guadalajara()
         footer_text = f"Creado el: {fecha_generacion}"
-        footer_link_text = f"Generado con ({URL_PAGINA})"
+        footer_link_text = f"{URL_PAGINA}"
 
         elements.append(Paragraph(footer_text, styles['Footer']))
         elements.append(Paragraph(footer_link_text, styles['FooterLink']))
