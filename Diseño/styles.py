@@ -85,6 +85,13 @@ def get_reportlab_styles():
             textColor=colors.blue,
             spaceAfter=6,
         ),
+        'TableHeader': ParagraphStyle(
+            name='TableHeader',
+            fontName='Helvetica-Bold',
+            fontSize=10,
+            alignment=TA_CENTER,
+            textColor=colors.black,
+        ),
         'Materia': ParagraphStyle(
             name='Materia',
             alignment=TA_CENTER,

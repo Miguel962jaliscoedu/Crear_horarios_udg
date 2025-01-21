@@ -1,7 +1,6 @@
 # Funciones/schedule.py
 import io
 import os
-import base64
 import numpy as np
 import pandas as pd
 from Funciones.utils import obtener_fecha_guadalajara
@@ -48,7 +47,7 @@ def create_schedule_sheet(expanded_data):
 
     return schedule
 
-def create_schedule_pdf(schedule, ciclo, as_base64=False):
+def create_schedule_pdf(schedule, ciclo):
     """Crea un archivo PDF con el horario."""
     try:
         buffer = io.BytesIO()
@@ -68,8 +67,14 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
 
         schedule = schedule.loc[filas_no_vacias].reset_index(drop=True)
 
+        styles = get_reportlab_styles() #Obtener los estilos
+
         data_for_table = []
-        data_for_table.append(dias_semana)
+        header_row = []
+
+        for dia in dias_semana:
+            header_row.append(Paragraph(dia, styles['TableHeader']))  # Crea Paragraphs con estilo
+        data_for_table.append(header_row)
 
         horas = schedule.index.to_list()
 
@@ -128,11 +133,13 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
                             if start_row is None:
                                 start_row = i - 1
                             else:
-                                if start_row is not None:
-                                    spans.append(((j, start_row), (j, i - 1)))
-                                    start_row = None
+                                pass #No es nesesario este if
+                        else: #Se agrega un else para guardar el span
+                            if start_row is not None:
+                                spans.append(((j, start_row), (j, i - 1)))
+                                start_row = None
             if start_row is not None:
-                spans.append(((j, start_row), (j, len(horas))))
+                spans.append(((j, start_row), (j, len(data_for_table) - 1)))  # Corrección crucial
 
         table = Table(data_for_table, colWidths=col_widths)
         table_style = TableStyle([
@@ -179,13 +186,8 @@ def create_schedule_pdf(schedule, ciclo, as_base64=False):
 
         doc.build(elements)
 
-        if as_base64:
-            buffer.seek(0)
-            pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            return pdf_base64
-        else:
-            buffer.seek(0)
-            return buffer
+        buffer.seek(0)
+        return buffer
 
     except Exception as e:
         print(f"Error al construir el PDF: {e}")

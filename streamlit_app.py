@@ -1,5 +1,6 @@
 # streamlit_app.py
 import os
+import base64
 import pandas as pd
 import streamlit as st
 from Diseño.styles import apply_dataframe_styles, set_page_style, apply_dataframe_styles_with_cruces,get_reportlab_styles
@@ -151,21 +152,27 @@ if st.session_state["query_state"]["done"]:
                                 styled_schedule_df = apply_dataframe_styles(schedule)
                                 st.dataframe(styled_schedule_df)
                                 try:
-                                    pdf_base64 = create_schedule_pdf(schedule, ciclo, as_base64=True)
-                                    pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="800" type="application/pdf"></iframe>'
-                                    st.markdown(pdf_display, unsafe_allow_html=True)
-
+                                    
                                     styles_pdf = get_reportlab_styles()
-                                    pdf_buffer = create_schedule_pdf(schedule, ciclo, URL_PAGINA)
-                                    #st.download_button(
-                                        #label="Descargar Horario (PDF)",
-                                        #data=pdf_buffer,
-                                        #file_name="horario.pdf",
-                                        #mime="application/pdf",
-                                    #)
-                                    #pdf_buffer.close()
+                                    pdf_buffer = create_schedule_pdf(schedule, ciclo)
+
+                                    # Obtener el Base64 para la vista previa
+                                    pdf_base64 = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+
+                                    # Vista previa del PDF (usando iframe)
+                                    st.markdown(f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="700" height="1000"></iframe>', unsafe_allow_html=True)
+
+                                    # Descarga del PDF (usando el buffer original)
+                                    pdf_buffer.seek(0) #Regresar al inicio del buffer para la descarga
+                                    st.download_button(
+                                        label="Descargar Horario",
+                                        data=pdf_buffer,
+                                        file_name="horario.pdf",
+                                        mime="application/pdf"
+                                    )
+
                                 except Exception as e:
-                                    st.error(f"Ocurrió un error al generar el PDF: {e}")
+                                    st.error(f"Ocurrió un error: {e}")
                                     import traceback
                                     traceback.print_exc()
                             else:
