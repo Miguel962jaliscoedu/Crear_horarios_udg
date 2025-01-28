@@ -1,13 +1,15 @@
-# streamlit_app.py
+# main.py
 import os
+import json
 import base64
 import pandas as pd
 import streamlit as st
 from Diseño.styles import apply_dataframe_styles, set_page_style, apply_dataframe_styles_with_cruces,get_reportlab_styles
 from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
-from Funciones.data_processing import fetch_table_data, process_data_from_web, cargar_datos_desde_json
-from Funciones.utils import Clase, hay_cruce, detectar_cruces, crear_clases_desde_dataframe, generar_mensaje_cruces
+from Funciones.data_processing import fetch_table_data, process_data_from_web, cargar_datos_desde_json, guardar_datos_local
+from Funciones.utils import detectar_cruces, crear_clases_desde_dataframe, generar_mensaje_cruces
 from Funciones.form_handler import fetch_form_options_with_descriptions, build_post_data, show_abbreviations,FORM_URL, POST_URL
+from Funciones.drive_utils import get_drive_service, guardar_en_drive
 
 VERSION = os.environ.get("VERSION", "Version de desarrollo")
 URL_PAGINA = os.environ.get("URL_PAGINA","Web de desarrollo")
@@ -78,6 +80,15 @@ if form_options:
                     st.session_state["query_state"]["selected_nrcs"] = []
                     st.session_state.selected_options = selected_options
                     st.session_state.expanded_data = process_data_from_web(table_data) #Procesar y guardar en json
+                    data_to_save = {
+                        "oferta_academica": st.session_state.expanded_data.to_dict(orient="records"),
+                        "materias_seleccionadas": [],  # Inicializar listas vacías
+                        "nrcs_seleccionados": [],
+                        "horario_generado": None,
+                        "ciclo": st.session_state.selected_options["ciclop"]["description"] if 'selected_options' in st.session_state and 'ciclop' in st.session_state.selected_options and 'description' in st.session_state.selected_options['ciclop'] else None
+                    }
+                    guardar_datos_local(data_to_save) #Guardar los datos localmente
+
                     st.rerun()
                 else:
                     st.warning("No se encontraron datos para las opciones seleccionadas.")
@@ -86,11 +97,47 @@ else:
 
 if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consulta
     if os.path.exists('datos.json'):  # Verifica si existe el archivo JSON
-        with st.spinner("Cargando datos guardados..."):  # Muestra un spinner
+        with open('datos.json', 'r', encoding='utf-8') as f:
             try:
-                st.session_state.expanded_data = cargar_datos_desde_json()  # Carga desde JSON
+                loaded_data = cargar_datos_desde_json() #Cargar los datos con la función modificada
+                st.session_state.expanded_data = pd.DataFrame(loaded_data.get("oferta_academica",[])) #Extraer la oferta academica
+                selected_subjects = loaded_data.get("materias_seleccionadas",[]) #Extraer las materias seleccionadas
+                selected_nrcs = loaded_data.get("nrcs_seleccionados",[]) #Extraer los NRC seleccionados
+                schedule = pd.DataFrame(loaded_data.get("horario_generado",[])) if loaded_data.get("horario_generado") else None #Extraer el horario generado
+                st.session_state["query_state"]["done"] = True
+                st.session_state["query_state"]["selected_nrcs"] = selected_nrcs
+                if selected_subjects: #Para mostrar las materias seleccionadas al cargar
+                    filtered_by_subject = st.session_state.expanded_data[st.session_state.expanded_data["Materia"].isin(selected_subjects)]
+                    if not filtered_by_subject.empty:
+                        st.subheader("Información de las Materias Seleccionadas:")
+                        styled_subject_df = apply_dataframe_styles(filtered_by_subject.reset_index(drop=True))
+                        st.dataframe(styled_subject_df)
+                if selected_nrcs: #Para mostrar los NRC seleccionados al cargar
+                    filtered_by_nrc = filtered_by_subject[filtered_by_subject["NRC"].isin(selected_nrcs)]
+                    columns_to_show = [col for col in filtered_by_nrc.columns if col != "Sesión"]
+                    if not filtered_by_nrc.empty:
+                        try:
+                            clases_seleccionadas = crear_clases_desde_dataframe(filtered_by_nrc)
+                            cruces = detectar_cruces(clases_seleccionadas)
+                            styled_nrc_df = apply_dataframe_styles_with_cruces(filtered_by_nrc[columns_to_show].reset_index(drop=True), cruces)
+                            st.dataframe(styled_nrc_df, hide_index=True) # Oculta el índice directamente
+                            if cruces:
+                                st.warning("Se detectaron cruces de horario (resaltados en la tabla):")
+                                mensajes_cruces = generar_mensaje_cruces(cruces) # Obtener los mensajes formateados
+                                for mensaje in mensajes_cruces: # Mostrar los mensajes
+                                    st.write(mensaje)
+                            else:
+                                st.success("No se detectaron cruces de horario.")
+                        except (ValueError, KeyError, Exception) as e:
+                            st.error(f"Error en la detección de cruces: {e}")
+                            st.stop()
+                    else:
+                        st.warning("No se encontraron materias con los NRC seleccionados.")
+
+            except json.JSONDecodeError as e:
+                st.error(f"Error al decodificar el archivo JSON: {e}")
             except Exception as e:
-                st.error(f"Error al cargar los datos guardados: {e}")
+                st.error(f"Error al cargar datos guardados: {e}")
     expanded_data = st.session_state.expanded_data
 
     if "Materia" in expanded_data.columns and "NRC" in expanded_data.columns:
@@ -145,7 +192,7 @@ if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consult
         else:
             st.write("Selecciona al menos un NRC para ver las materias correspondientes.")
 
-        if st.button("Generar horario", use_container_width=True):
+        if st.button("Generar horario", use_container_width=True): #Seccion para generar el horario (DESPUÉS DE LA SELECCIÓN DE NRCs)
             if 'selected_options' in st.session_state and 'ciclop' in st.session_state.selected_options and 'description' in st.session_state.selected_options['ciclop']:
                 ciclo = st.session_state.selected_options["ciclop"]["description"]
                 if selected_nrcs:
@@ -157,18 +204,14 @@ if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consult
                             styled_schedule_df = apply_dataframe_styles(schedule)
                             st.dataframe(styled_schedule_df)
                             try:
-                                    
                                 styles_pdf = get_reportlab_styles()
                                 pdf_buffer = create_schedule_pdf(schedule, ciclo)
 
-                                # Obtener el Base64 para la vista previa
                                 pdf_base64 = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
 
-                                # Vista previa del PDF (usando iframe)
                                 st.markdown(f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="700" height="1000"></iframe>', unsafe_allow_html=True)
 
-                                # Descarga del PDF (usando el buffer original)
-                                pdf_buffer.seek(0) #Regresar al inicio del buffer para la descarga
+                                pdf_buffer.seek(0)
                                 st.download_button(
                                     label="Descargar Horario",
                                     data=pdf_buffer,
@@ -188,20 +231,35 @@ if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consult
                     st.warning("Selecciona al menos un NRC.")
             else:
                 st.error("No se pudo obtener la información del ciclo. Por favor, realiza una nueva consulta.")
+            data_to_save = {
+                "oferta_academica": st.session_state.expanded_data.to_dict(orient="records"),
+                "materias_seleccionadas": selected_subjects,
+                "nrcs_seleccionados": selected_nrcs,
+                "horario_generado": schedule.to_dict(orient="records") if schedule is not None and not schedule.empty else None,
+                "ciclo": st.session_state.selected_options["ciclop"]["description"] if 'selected_options' in st.session_state and 'ciclop' in st.session_state.selected_options and 'description' in st.session_state.selected_options['ciclop'] else None
+        }
+            guardar_datos_local(data_to_save)
 
-    else:
-            st.warning("Selecciona al menos una materia, ya que no se encontraron las columnas 'Materia' o 'NRC' en los datos procesados.")
-else:
-    st.warning("No se han obtenido datos de la consulta inicial. Realiza una consulta primero.")
+        if st.checkbox("Guardar en Google Drive"):
+            service = get_drive_service()
+            if service:
+                nombre_archivo = f"horario_{data_to_save['ciclo']}.json" if data_to_save['ciclo'] else "horario.json"
+                id_archivo = guardar_en_drive(service, nombre_archivo, data_to_save)
+                if id_archivo:
+                    st.write(f"Puedes acceder a tu archivo en: https://drive.google.com/file/d/{id_archivo}/view?usp=sharing")
+            else:
+                st.error("No se pudo conectar con Google Drive. Revisa las credenciales.")
 
+# Sección para el botón "Nueva consulta" (AL FINAL DEL ARCHIVO, ANTES DEL FOOTER)
 if st.button("Nueva consulta", use_container_width=True):
     reset_query_state()
     st.rerun()
 
+# Footer (AL FINAL DEL ARCHIVO)
 st.markdown(
     f"""
     <div class="footer">
-        Desarrollado con la ayuda de IA (ChatGPT y Gemini) | Versión: {VERSION}
+        Desarrollado con la ayuda de IA (ChatGPT y Gemini) | Versión: {VERSION} | <a href="{URL_PAGINA}" target="_blank">Web</a>
     </div>
     """,
     unsafe_allow_html=True,

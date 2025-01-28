@@ -135,23 +135,30 @@ def process_data_from_web(df, nombre_archivo="datos.json"):
 
 def cargar_datos_desde_json(nombre_archivo="datos.json"):
     """
-    Carga los datos desde un archivo JSON y devuelve un DataFrame.
+    Carga los datos desde un archivo JSON y devuelve un diccionario con toda la información.
     """
     try:
         if os.path.exists(nombre_archivo):
             with open(nombre_archivo, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            df = pd.DataFrame(data)
-            return df
+                return data #Devuelve el diccionario completo
+
         else:
-            print(f"Archivo {nombre_archivo} no encontrado. Se devolverá un DataFrame vacío.")
-            return pd.DataFrame()
+            print(f"Archivo {nombre_archivo} no encontrado. Se devolverá un diccionario vacío.")
+            return {} #Devuelve un diccionario vacio
     except json.JSONDecodeError as e:
         print(f"Error al decodificar JSON: {e}")
-        return pd.DataFrame()
+        return {}
     except FileNotFoundError:
-        print(f"Archivo {nombre_archivo} no encontrado. Se devolverá un DataFrame vacío.")
-        return pd.DataFrame()
+        print(f"Archivo {nombre_archivo} no encontrado. Se devolverá un diccionario vacío.")
+        return {}
     except Exception as e:
         print(f"Error al cargar datos desde JSON: {e}")
-        return pd.DataFrame()
+        return {}
+
+def guardar_datos_local(data):
+    try:
+        with open('datos.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Error al guardar datos localmente: {e}")

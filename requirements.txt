@@ -5,6 +5,7 @@ openpyxl
 datetime
 requests
 reportlab
+matplotlib
 beautifulsoup4
 google-auth-httplib2
 google-auth-oauthlib
