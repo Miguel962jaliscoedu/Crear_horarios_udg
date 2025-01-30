@@ -259,7 +259,7 @@ if st.button("Nueva consulta", use_container_width=True):
 st.markdown(
     f"""
     <div class="footer">
-        Desarrollado con la ayuda de IA (ChatGPT y Gemini) | Versión: {VERSION} | <a href="{URL_PAGINA}" target="_blank">Web</a>
+        Desarrollado con la ayuda de IA (ChatGPT y Gemini) | Versión: {VERSION} | <a href="{URL_PAGINA}" target="_blank">https://crear-horarios-udg.streamlit.app/</a>
     </div>
     """,
     unsafe_allow_html=True,
