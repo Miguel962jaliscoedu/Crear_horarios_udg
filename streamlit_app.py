@@ -240,15 +240,15 @@ if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consult
         }
             guardar_datos_local(data_to_save)
 
-        if st.checkbox("Guardar en Google Drive"):
-            service = get_drive_service()
-            if service:
-                nombre_archivo = f"horario_{data_to_save['ciclo']}.json" if data_to_save['ciclo'] else "horario.json"
-                id_archivo = guardar_en_drive(service, nombre_archivo, data_to_save)
-                if id_archivo:
-                    st.write(f"Puedes acceder a tu archivo en: https://drive.google.com/file/d/{id_archivo}/view?usp=sharing")
-            else:
-                st.error("No se pudo conectar con Google Drive. Revisa las credenciales.")
+        #if st.checkbox("Guardar en Google Drive"):
+            #service = get_drive_service()
+            #if service:
+                #nombre_archivo = f"horario_{data_to_save['ciclo']}.json" if data_to_save['ciclo'] else "horario.json"
+                #id_archivo = guardar_en_drive(service, nombre_archivo, data_to_save)
+                #if id_archivo:
+                    #st.write(f"Puedes acceder a tu archivo en: https://drive.google.com/file/d/{id_archivo}/view?usp=sharing")
+            #else:
+                #st.error("No se pudo conectar con Google Drive. Revisa las credenciales.")
 
 # Sección para el botón "Nueva consulta" (AL FINAL DEL ARCHIVO, ANTES DEL FOOTER)
 if st.button("Nueva consulta", use_container_width=True):
