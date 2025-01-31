@@ -22,6 +22,29 @@ st.set_page_config(
 )
 set_page_style()
 
+@st.cache_data  # Caching para mejorar el rendimiento
+def get_academic_offer(selected_options_json):
+    selected_options = json.loads(selected_options_json)
+    post_data = build_post_data(selected_options)
+    table_data = fetch_table_data(POST_URL, post_data)
+    if table_data is not None and not table_data.empty:
+        expanded_data = process_data_from_web(table_data)
+        return expanded_data.to_json(orient="records")  # Devuelve JSON
+    return None
+
+@st.cache_data
+def generate_schedule(selected_nrcs_json, selected_options_json):
+    selected_nrcs = json.loads(selected_nrcs_json)
+    selected_options = json.loads(selected_options_json)
+    ciclo = selected_options.get("ciclop", {}).get("description")
+    expanded_data = pd.read_json(st.session_state.get("api_data")) #lee los datos del estado de la sesion
+    if selected_nrcs:
+        filtered_data = expanded_data[expanded_data["NRC"].isin(selected_nrcs)]
+        if not filtered_data.empty:
+            schedule = create_schedule_sheet(filtered_data)
+            return schedule.to_json(orient="records") if schedule is not None and not schedule.empty else None
+    return None
+
 # Título principal
 st.markdown("<h1 style='text-align: center;'>📅Crea tu horario de clases ‎ </h1>", unsafe_allow_html=True)
 st.markdown("---")
@@ -254,6 +277,40 @@ if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consult
 if st.button("Nueva consulta", use_container_width=True):
     reset_query_state()
     st.rerun()
+
+# --- Secciones de la API ---
+
+# Ocultar la interfaz principal de Streamlit si se llama a un endpoint de la API
+if st.query_params:
+    if "endpoint" in st.query_params:
+        endpoint = st.query_params["endpoint"][0]
+
+        if endpoint == "get_academic_offer":
+            selected_options_json = st.query_params.get("selected_options", [None])[0] #obtener los parametros
+            if selected_options_json:
+                academic_offer = get_academic_offer(selected_options_json)
+                if academic_offer:
+                    st.write(academic_offer) #devuelve la info
+                else:
+                    st.write(json.dumps({"error": "No se encontraron datos"}))
+            else:
+                st.write(json.dumps({"error": "Faltan parametros"}))
+
+        elif endpoint == "generate_schedule":
+            selected_nrcs_json = st.query_params.get("selected_nrcs", [None])[0]
+            selected_options_json = st.query_params.get("selected_options", [None])[0]
+            if selected_nrcs_json and selected_options_json:
+                schedule_data = generate_schedule(selected_nrcs_json, selected_options_json)
+                if schedule_data:
+                    st.write(schedule_data)
+                else:
+                    st.write(json.dumps({"error": "No se pudo generar el horario"}))
+            else:
+                st.write(json.dumps({"error": "Faltan parametros"}))
+
+        st.stop() # Detener la ejecución de Streamlit para que solo se muestre la respuesta de la API
+
+#-----------------END-API-----------------
 
 # Footer (AL FINAL DEL ARCHIVO)
 st.markdown(
