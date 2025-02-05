@@ -1,4 +1,4 @@
-#READMY generado por StreamLit
+#README generado por StreamLit
 
 ### How to run it on your own machine
 
