@@ -48,7 +48,7 @@ def generate_schedule(selected_nrcs_json, selected_options_json):
     return None
 
 # Título principal
-st.markdown("<h1 style='text-align: center;'>📅Crea tu horario de clases ‎ </h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>📅Planifica tu horario de clases ‎ </h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 # Inicialización del estado de la sesión
@@ -64,7 +64,6 @@ def reset_query_state():
     st.session_state.expanded_data = pd.DataFrame()
     if os.path.exists('datos.json'): #eliminar el archivo json para evitar errores con los datos
         os.remove('datos.json')
-
 
 # Consulta inicial
 st.subheader("Consulta la Oferta Academica:")
@@ -281,7 +280,7 @@ if st.button("Nueva consulta", use_container_width=True):
     reset_query_state()
     st.rerun()
 
-#Formulario Sugerencias
+#Formulario de Sugerencias
 with st.expander("📝 Hacer una sugerencia o queja"):
     components.iframe(form_url, height=600, scrolling=True)
 
