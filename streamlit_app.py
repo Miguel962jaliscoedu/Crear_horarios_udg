@@ -4,6 +4,7 @@ import json
 import base64
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from Diseño.styles import apply_dataframe_styles, set_page_style, apply_dataframe_styles_with_cruces,get_reportlab_styles
 from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
 from Funciones.data_processing import fetch_table_data, process_data_from_web, cargar_datos_desde_json, guardar_datos_local
@@ -13,6 +14,7 @@ from Funciones.drive_utils import get_drive_service, guardar_en_drive
 
 VERSION = os.environ.get("VERSION", "Version de desarrollo")
 URL_PAGINA = os.environ.get("URL_PAGINA","Web de desarrollo")
+form_url = "https://docs.google.com/forms/d/e/1FAIpQLScc5fCcNo9ZocfuqDhJD5QOdbdTNP_RnUhTYAzkEIEFHIB2rA/viewform?embedded=true"
 
 # Configuración de la página y estilos generales
 st.set_page_config(
@@ -62,6 +64,7 @@ def reset_query_state():
     st.session_state.expanded_data = pd.DataFrame()
     if os.path.exists('datos.json'): #eliminar el archivo json para evitar errores con los datos
         os.remove('datos.json')
+
 
 # Consulta inicial
 st.subheader("Consulta la Oferta Academica:")
@@ -277,6 +280,10 @@ if st.session_state["query_state"]["done"]:  # Se ejecuta DESPUÉS de la consult
 if st.button("Nueva consulta", use_container_width=True):
     reset_query_state()
     st.rerun()
+
+#Formulario Sugerencias
+with st.expander("📝 Hacer una sugerencia o queja"):
+    components.iframe(form_url, height=600, scrolling=True)
 
 # --- Secciones de la API ---
 
