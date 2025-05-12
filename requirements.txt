@@ -1,12 +1,11 @@
 lxml
 pandas
+filelock
 streamlit
 openpyxl
 datetime
 requests
 reportlab
 matplotlib
+xlsxwriter
 beautifulsoup4
-google-auth-httplib2
-google-auth-oauthlib
-google-api-python-client
