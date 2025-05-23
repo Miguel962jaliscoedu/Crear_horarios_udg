@@ -2,11 +2,12 @@ import os
 import json
 import base64
 import logging
-from io import BytesIO
+import requests
 import pandas as pd
 import streamlit as st
+from io import BytesIO
 import streamlit.components.v1 as components
-import requests
+from streamlit_pdf_viewer import pdf_viewer
 from Diseño.styles import apply_dataframe_styles, set_page_style, apply_dataframe_styles_with_cruces, get_reportlab_styles
 from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
 from Funciones.data_processing import fetch_table_data, process_data_from_web, cargar_datos_desde_json, guardar_datos_local
@@ -134,39 +135,39 @@ def validate_data(df):
     if df.empty:
         raise ValueError("El DataFrame está vacío")
 
-def mostrar_vista_previa_pdf(schedule_df):
-    """Muestra una vista previa del horario en formato PDF usando vista nativa"""
+def mostrar_opciones_pdf(schedule_df):
+    """Muestra opciones para ver y descargar el horario en formato PDF."""
     try:
         pdf_buffer = create_schedule_pdf(
             schedule_df,
             st.session_state.selected_options["ciclop"]["description"]
         )
-        pdf_buffer.seek(0)
-        
-        # Mostrar botón de descarga
+        pdf_buffer.seek(0) # Asegúrate de que el buffer esté al inicio para su lectura
+
+        # Opcion 1: Botón para descargar el PDF
         st.download_button(
             label="📄 Descargar PDF",
-            data=pdf_buffer,
+            data=pdf_buffer.getvalue(), # Usar .getvalue() para obtener los bytes
             file_name="mi_horario.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
+            key="download_pdf_main_tab" # Añade un key único para este botón
         )
+
+        st.markdown("---")
+        st.subheader("👀 Vista Previa del Horario")
         
-        # Mostrar vista previa nativa del PDF
-        base64_pdf = base64.b64encode(pdf_buffer.read()).decode('utf-8')
-        pdf_display = f"""
-        <iframe src="data:application/pdf;base64,{base64_pdf}" 
-                width="100%" 
-                height="800px" 
-                style="border:1px solid #eee; margin-top: 20px;">
-        </iframe>
-        """
-        st.markdown(pdf_display, unsafe_allow_html=True)
-        
-        pdf_buffer.seek(0)
+        # Opcion 2: Vista previa del PDF usando streamlit-pdf-viewer
+        # Ajustar width al 100% y una altura fija (ej. 800px o más, según tu preferencia)
+        pdf_viewer(input=pdf_buffer.getvalue(), width="100%", height=650) 
+        # NOTA: No puedes poner height="100%" directamente porque no funciona así en Streamlit/componentes HTML en este contexto.
+        # Una altura fija generosa (como 800px o 1000px) es lo más común para que sea visible.
+
+        pdf_buffer.seek(0) # Restablecer la posición del buffer si se va a usar de nuevo
+
         return pdf_buffer
     except Exception as e:
-        logger.error(f"Error al generar PDF: {str(e)}")
-        st.error(f"Error al generar el horario PDF: {str(e)}")
+        logger.error(f"Error al generar PDF para previsualización: {str(e)}")
+        st.error(f"Error al generar el horario PDF para previsualización: {str(e)}")
         return None
 
 # --------------------------------------------------
@@ -546,8 +547,7 @@ with tab3:
                 ]
             )
             
-            st.markdown("### 📄 Vista previa del horario")
-            pdf_buffer = mostrar_vista_previa_pdf(schedule_df)
+            pdf_buffer = mostrar_opciones_pdf(schedule_df)
             
             st.markdown("---")
             st.markdown("### 💾 Descargar Horario")
