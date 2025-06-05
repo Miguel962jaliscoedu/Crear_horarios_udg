@@ -220,6 +220,7 @@ with tab1:
                                                  [f"{k} - {v}" for k, v in carreras.items()])
                 abrev, desc = selected_carrera.split(" - ", 1)
                 selected_options["majrp"] = {"value": abrev, "description": desc}
+                st.info("Asegurate de seleccionar el codigo de carrera correccto, ya que en algunos casos pueden existir mas de una clave para una misma carrera")
         except Exception as e:
             logger.error(f"Error al cargar carreras: {str(e)}")
             st.error("Error al cargar las carreras disponibles")
