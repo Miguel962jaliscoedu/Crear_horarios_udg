@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from io import BytesIO
 import streamlit.components.v1 as components
-from streamlit_pdf_viewer import pdf_viewer
+# from streamlit_pdf_viewer import pdf_viewer
 from Diseño.styles import apply_dataframe_styles, set_page_style, apply_dataframe_styles_with_cruces, get_reportlab_styles
 from Funciones.schedule import create_schedule_sheet, create_schedule_pdf
 from Funciones.data_processing import fetch_table_data, process_data_from_web, cargar_datos_desde_json, guardar_datos_local
@@ -158,7 +158,7 @@ def mostrar_opciones_pdf(schedule_df):
         
         # Opcion 2: Vista previa del PDF usando streamlit-pdf-viewer
         # Ajustar width al 100% y una altura fija (ej. 800px o más, según tu preferencia)
-        pdf_viewer(input=pdf_buffer.getvalue(), width="100%", height=650) 
+        # pdf_viewer(input=pdf_buffer.getvalue(), width="100%", height=650) 
         # NOTA: No puedes poner height="100%" directamente porque no funciona así en Streamlit/componentes HTML en este contexto.
         # Una altura fija generosa (como 800px o 1000px) es lo más común para que sea visible.
 
